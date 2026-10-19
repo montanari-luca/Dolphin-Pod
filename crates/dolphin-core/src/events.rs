@@ -3,7 +3,7 @@
 use serde::Serialize;
 use ts_rs::TS;
 
-use crate::model::{ActionLogEntry, Agent, Chat, Message, PermissionGrant, UsageStats};
+use crate::model::{ActionLogEntry, Agent, Chat, Message, PermissionGrant, UsageStats, UserRole};
 use crate::settings::SettingChange;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
@@ -40,6 +40,7 @@ pub enum CoreEvent {
     ChatChanged { chat: Chat },
     ChatDeleted { chat_id: String },
     AgentChanged { agent: Agent },
+    RolesChanged { roles: Vec<UserRole> },
     SettingChanged { change: SettingChange },
     UsageUpdated { usage: UsageStats },
     GrantChanged { grant: PermissionGrant },

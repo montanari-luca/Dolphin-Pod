@@ -1,14 +1,16 @@
 import { motion } from "motion/react";
-import { Bot, Info, Palette, Plug, ScrollText, SlidersHorizontal } from "lucide-react";
+import { Bot, Info, Palette, Plug, ScrollText, SlidersHorizontal, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { useApp, type SettingsTab } from "@/store/app";
 import { AboutPage } from "./AboutPage";
 import { AgentsPage } from "./AgentsPage";
 import { AppearancePage, GeneralPage, PreferencesPage } from "./GeneralPages";
+import { ProfilePage } from "./ProfilePage";
 import { ProvidersPage } from "./ProvidersPage";
 
 const TABS: { id: SettingsTab; label: string; icon: ReactNode }[] = [
+  { id: "profile", label: "Profile", icon: <UserRound className="size-4" /> },
   { id: "general", label: "General", icon: <SlidersHorizontal className="size-4" /> },
   { id: "providers", label: "Providers", icon: <Plug className="size-4" /> },
   { id: "agents", label: "Agents", icon: <Bot className="size-4" /> },
@@ -39,6 +41,7 @@ export function SettingsView() {
       <div className="min-w-0 flex-1 overflow-y-auto">
         <div className="drag-region h-4" />
         <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }} className="mx-auto max-w-[760px] px-8 pb-10">
+          {tab === "profile" && <ProfilePage />}
           {tab === "general" && <GeneralPage />}
           {tab === "providers" && <ProvidersPage />}
           {tab === "agents" && <AgentsPage />}

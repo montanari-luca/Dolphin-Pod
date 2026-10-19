@@ -3,7 +3,7 @@
 
 use crate::db::Db;
 use crate::error::Result;
-use crate::model::{Agent, AgentColor, AgentRole, Chat};
+use crate::model::{Agent, AgentColor, AgentRole, Chat, UserRole};
 use crate::util::{new_id, now_ms};
 
 pub struct AgentSeed {
@@ -162,6 +162,32 @@ pub fn seed_if_needed(db: &Db) -> Result<bool> {
     Ok(true)
 }
 
+/// The user's default role: "Master", in a rainbow gradient. Runs once per database (fresh or upgraded).
+pub fn seed_roles_if_needed(db: &Db) -> Result<bool> {
+    if db.meta_get("roles_seeded")?.is_some() {
+        return Ok(false);
+    }
+    if db.list_roles()?.is_empty() {
+        db.upsert_role(&UserRole {
+            id: new_id(),
+            name: "Master".into(),
+            icon: "crown".into(),
+            color: rainbow(),
+            sort: 0,
+            updated_at: now_ms(),
+        })?;
+    }
+    db.meta_set("roles_seeded", "1")?;
+    Ok(true)
+}
+
+pub fn rainbow() -> AgentColor {
+    AgentColor::gradient(
+        90.0,
+        &[("#ff3b5c", 0.0), ("#ff9f1c", 20.0), ("#ffd60a", 38.0), ("#2ee59d", 56.0), ("#3d8bfd", 76.0), ("#b15cff", 100.0)],
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -182,5 +208,18 @@ mod tests {
         }
         let general = chats.iter().find(|c| c.name == "General").unwrap();
         assert_eq!(general.agent_ids.len(), 10);
+    }
+
+    #[test]
+    fn master_role_is_seeded_once_and_stays_deleted() {
+        let db = Db::open_in_memory().unwrap();
+        assert!(seed_roles_if_needed(&db).unwrap());
+        let roles = db.list_roles().unwrap();
+        assert_eq!(roles.len(), 1);
+        assert_eq!((roles[0].name.as_str(), roles[0].icon.as_str()), ("Master", "crown"));
+        assert!(matches!(&roles[0].color, AgentColor::Gradient { stops, .. } if stops.len() == 6));
+        db.delete_role(&roles[0].id).unwrap();
+        assert!(!seed_roles_if_needed(&db).unwrap(), "deleting every role is respected");
+        assert!(db.list_roles().unwrap().is_empty());
     }
 }

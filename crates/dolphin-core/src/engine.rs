@@ -340,7 +340,10 @@ impl Core {
 
     fn author_name(&self, agents: &[Agent], m: &Message) -> String {
         match &m.agent_id {
-            None => "User".into(),
+            None => {
+                let n = settings::get_string(&self.db, keys::DISPLAY_NAME);
+                if n.trim().is_empty() || n.eq_ignore_ascii_case("you") { "User".into() } else { n }
+            }
             Some(id) => agents.iter().find(|a| &a.id == id).map(|a| a.name.clone()).unwrap_or_else(|| "Agent".into()),
         }
     }
@@ -464,6 +467,7 @@ impl Core {
         if is_image_agent && model.tools {
             tool_specs.push(tools::image_tool());
         }
+        let user_name = settings::get_string(&self.db, keys::DISPLAY_NAME).trim().to_string();
         let system = prompts::agent_system(&prompts::AgentPromptInput {
             agent,
             chat: &turn.chat,
@@ -472,6 +476,7 @@ impl Core {
             permission: level,
             has_image_tool: is_image_agent,
             preferences: &turn.prefs,
+            user_name: Some(user_name.as_str()).filter(|n| !n.is_empty() && !n.eq_ignore_ascii_case("you")),
         });
         let mut messages = self.history_for(turn, agent, &msg.id, model.vision)?;
         if let Some(b) = &task.brief {

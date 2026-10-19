@@ -1,6 +1,7 @@
 import { Lock, LockOpen } from "lucide-react";
 import type { Agent, Chat } from "@dolphin/shared";
 import { AgentAvatar, AgentHoverCard, AgentNameText } from "@/components/agent";
+import { RoleBadge, UserAvatar, UserHoverCard, UserNameText, useUser } from "@/components/user";
 import { cn } from "@/lib/cn";
 import { useApp, type Activity } from "@/store/app";
 
@@ -46,6 +47,31 @@ function Member({ agent, chat, act }: { agent: Agent; chat: Chat; act?: Activity
   );
 }
 
+/** The user, pinned at the top of the member list with their roles. */
+function Me() {
+  const { roles } = useUser();
+  const setView = useApp((s) => s.setView);
+  return (
+    <div className="mb-3">
+      <div className="px-2 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-faint">You</div>
+      <UserHoverCard side="left">
+        <button onClick={() => setView("settings", "profile")} className="flex w-full items-center gap-2.5 rounded-sm px-2 py-1.5 text-left hover:bg-hover transition-ui">
+          <UserAvatar size={30} />
+          <div className="min-w-0 flex-1">
+            <UserNameText className="text-[13px] leading-tight" />
+            <div className="mt-1 flex flex-wrap gap-1">
+              {roles.slice(0, 3).map((r) => (
+                <RoleBadge key={r.id} role={r} className="h-[18px] text-[10.5px]" />
+              ))}
+              {roles.length > 3 && <span className="text-[10.5px] text-faint">+{roles.length - 3}</span>}
+            </div>
+          </div>
+        </button>
+      </UserHoverCard>
+    </div>
+  );
+}
+
 export function MembersPanel({ chat }: { chat: Chat }) {
   const agents = useApp((s) => s.agents);
   const activity = useApp((s) => s.activity[chat.id]);
@@ -68,6 +94,7 @@ export function MembersPanel({ chat }: { chat: Chat }) {
         <span className="text-[13px] font-semibold text-fg">Members</span>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        <Me />
         <Section title="Moderation" list={crew} />
         <Section title="Specialists" list={specialists} />
       </div>

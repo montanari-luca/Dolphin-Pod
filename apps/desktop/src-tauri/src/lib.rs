@@ -138,6 +138,28 @@ fn resolve_confirmation(core: State<CoreRef>, id: String, accepted: bool) {
     core.resolve_confirmation(&id, accepted)
 }
 
+// ------------------------------------------------------------------ the user's roles
+
+#[tauri::command]
+fn list_roles(core: State<CoreRef>) -> Res<Vec<UserRole>> {
+    core.list_roles()
+}
+
+#[tauri::command]
+fn save_role(core: State<CoreRef>, role: UserRole) -> Res<UserRole> {
+    core.save_role(role)
+}
+
+#[tauri::command]
+fn delete_role(core: State<CoreRef>, role_id: String) -> Res<()> {
+    core.delete_role(&role_id)
+}
+
+#[tauri::command]
+fn reorder_roles(core: State<CoreRef>, role_ids: Vec<String>) -> Res<Vec<UserRole>> {
+    core.reorder_roles(role_ids)
+}
+
 // ------------------------------------------------------------------ attachments
 
 /// Raw-bytes upload (paste / drop from the webview). Name and type travel in headers.
@@ -307,6 +329,10 @@ pub fn run() {
             action_log,
             usage_all,
             resolve_confirmation,
+            list_roles,
+            save_role,
+            delete_role,
+            reorder_roles,
             stage_attachment,
             stage_attachment_path,
             provider_kinds,

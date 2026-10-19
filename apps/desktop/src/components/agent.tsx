@@ -57,14 +57,6 @@ export function AgentAvatar({ agent, size = 32, busy, className }: { agent: Agen
   );
 }
 
-export function UserAvatar({ size = 32 }: { size?: number }) {
-  return (
-    <span className="inline-flex shrink-0 items-center justify-center rounded-full bg-surface-2 border border-line-strong text-muted font-semibold" style={{ width: size, height: size, fontSize: size * 0.42 }}>
-      You
-    </span>
-  );
-}
-
 /** The agent's name in its colors, adjusted for contrast against the current theme. */
 export function AgentNameText({ agent, className, at, children }: { agent: Agent; className?: string; at?: boolean; children?: ReactNode }) {
   const theme = useResolvedTheme();

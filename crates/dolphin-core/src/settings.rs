@@ -93,6 +93,7 @@ pub mod keys {
     pub const PASTE_THRESHOLD: &str = "chat.paste_threshold";
     pub const SHOW_BRIEFS: &str = "routing.show_briefs";
     pub const ONBOARDED: &str = "app.onboarded";
+    pub const DISPLAY_NAME: &str = "profile.display_name";
 
     pub const CHAT_NAME: &str = "chat.name";
     pub const CHAT_AGENTS: &str = "chat.agents";
@@ -131,6 +132,7 @@ pub fn registry() -> Vec<SettingDef> {
             Int { min: 500, max: 200_000 }, json!(6000)),
         def(keys::SHOW_BRIEFS, "Show orchestration briefs", "Show Lincoln's brief and the routing decision on agent messages.", Global, Bool, json!(true)),
         def(keys::ONBOARDED, "Onboarding finished", "Internal.", Global, Bool, json!(false)),
+        def(keys::DISPLAY_NAME, "Your name", "How you appear in chats. Agents address you by it.", Global, Text { max_len: 32 }, json!("You")),
 
         def(keys::CHAT_NAME, "Chat name", "Name of the chat.", Chat, Text { max_len: 60 }, json!("")),
         def(keys::CHAT_AGENTS, "Assigned agents", "Agents that take part in this chat. Roger and Lincoln are always present.", Chat, AgentList, json!([])),
@@ -226,15 +228,7 @@ fn validate(d: &SettingDef, v: &Value) -> Result<Value> {
         }
         SettingType::Color => {
             let c: AgentColor = serde_json::from_value(v.clone()).map_err(|_| bad())?;
-            let ok_hex = |s: &str| {
-                let h = s.trim_start_matches('#');
-                s.starts_with('#') && matches!(h.len(), 3 | 6 | 8) && h.chars().all(|c| c.is_ascii_hexdigit())
-            };
-            let valid = match &c {
-                AgentColor::Solid { color } => ok_hex(color),
-                AgentColor::Gradient { stops, .. } => stops.len() >= 2 && stops.iter().all(|s| ok_hex(&s.color)),
-            };
-            if !valid {
+            if !valid_color(&c) {
                 return Err(bad());
             }
             v.clone()
@@ -252,6 +246,18 @@ fn validate(d: &SettingDef, v: &Value) -> Result<Value> {
             json!(s)
         }
     })
+}
+
+/// Hex colors only; gradients need 2-8 stops.
+pub fn valid_color(c: &AgentColor) -> bool {
+    let ok_hex = |s: &str| {
+        let h = s.trim_start_matches('#');
+        s.starts_with('#') && matches!(h.len(), 3 | 6 | 8) && h.chars().all(|c| c.is_ascii_hexdigit())
+    };
+    match c {
+        AgentColor::Solid { color } => ok_hex(color),
+        AgentColor::Gradient { stops, .. } => (2..=8).contains(&stops.len()) && stops.iter().all(|s| ok_hex(&s.color)),
+    }
 }
 
 // ------------------------------------------------------------------ targets

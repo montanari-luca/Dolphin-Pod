@@ -453,3 +453,20 @@ pub struct Automation {
     #[ts(type = "number")]
     pub updated_at: i64,
 }
+
+// ------------------------------------------------------------------ user profile
+
+/// A cosmetic role the user gives themselves. The first role (lowest `sort`) colors the user's name.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct UserRole {
+    pub id: Id,
+    pub name: String,
+    /// Icon key from the app's role icon set (e.g. "crown").
+    pub icon: String,
+    pub color: AgentColor,
+    pub sort: i32,
+    #[ts(type = "number")]
+    pub updated_at: i64,
+}

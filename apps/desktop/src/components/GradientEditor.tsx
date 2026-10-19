@@ -14,6 +14,7 @@ const PRESETS: AgentColor[] = [
   g("#3d8bfd", "#a77bdb"),
   g("#f7826f", "#fbb36a"),
   g("#0ea5e9", "#6366f1", "#d946ef"),
+  { type: "gradient", angle: 90, stops: ["#ff3b5c", "#ff9f1c", "#ffd60a", "#2ee59d", "#3d8bfd", "#b15cff"].map((c, i) => ({ color: c, position: [0, 20, 38, 56, 76, 100][i] })) },
   { type: "solid", color: "#64748b" },
 ];
 
@@ -75,7 +76,7 @@ export function GradientEditor({ value, onChange }: { value: AgentColor; onChang
           <div className="flex items-center gap-3">
             <button
               className="inline-flex items-center gap-1 text-[12px] text-muted hover:text-fg disabled:opacity-40"
-              disabled={stops.length >= 4}
+              disabled={stops.length >= 8}
               onClick={() => onChange({ ...value, stops: [...stops, { color: "#f7826f", position: 100 }] })}
             >
               <Plus className="size-3.5" /> Add stop

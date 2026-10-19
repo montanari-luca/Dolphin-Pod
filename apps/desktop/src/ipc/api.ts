@@ -17,6 +17,7 @@ import type {
   SettingDef,
   UpdateInfo,
   UsageStats,
+  UserRole,
 } from "@dolphin/shared";
 
 export interface AppInfo {
@@ -48,6 +49,10 @@ export interface Backend {
   actionLog(chatId: string): Promise<ActionLogEntry[]>;
   usageAll(): Promise<UsageStats[]>;
   resolveConfirmation(id: string, accepted: boolean): Promise<void>;
+  listRoles(): Promise<UserRole[]>;
+  saveRole(role: UserRole): Promise<UserRole>;
+  deleteRole(roleId: string): Promise<void>;
+  reorderRoles(roleIds: string[]): Promise<UserRole[]>;
   stageAttachment(name: string, mime: string, bytes: Uint8Array): Promise<Attachment>;
   stageAttachmentPath(path: string): Promise<Attachment>;
   providerKinds(): Promise<ProviderKindInfo[]>;

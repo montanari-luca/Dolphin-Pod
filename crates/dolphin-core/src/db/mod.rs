@@ -5,6 +5,7 @@ mod chats;
 mod messages;
 mod misc;
 mod providers;
+mod roles;
 
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -16,7 +17,8 @@ use serde::de::DeserializeOwned;
 use crate::error::Result;
 use crate::util::new_id;
 
-const SCHEMA_VERSION: i32 = 1;
+/// Ordered migrations; index + 1 is the schema version it produces. Only ever append.
+const MIGRATIONS: &[&str] = &[include_str!("schema.sql"), include_str!("migration_0002_user_roles.sql")];
 
 #[derive(Clone)]
 pub struct Db {
@@ -42,9 +44,9 @@ impl Db {
 
     fn init(conn: Connection) -> Result<Self> {
         let version: i32 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if version < SCHEMA_VERSION {
-            conn.execute_batch(include_str!("schema.sql"))?;
-            conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        for (i, sql) in MIGRATIONS.iter().enumerate().skip(version.max(0) as usize) {
+            conn.execute_batch(&format!("BEGIN;\n{sql}\nCOMMIT;"))?;
+            conn.pragma_update(None, "user_version", i as i32 + 1)?;
         }
         let device_id: Option<String> = conn
             .query_row("SELECT value FROM meta WHERE key = 'device_id'", [], |r| r.get(0))
@@ -107,6 +109,21 @@ pub(crate) fn parse_enum<T: DeserializeOwned>(s: &str) -> Option<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn upgrades_a_v1_database_in_place() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("old.db");
+        {
+            let conn = Connection::open(&p).unwrap();
+            conn.execute_batch(MIGRATIONS[0]).unwrap();
+            conn.pragma_update(None, "user_version", 1).unwrap();
+        }
+        let db = Db::open(&p).unwrap();
+        let v: i32 = db.conn().pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
+        assert_eq!(v as usize, MIGRATIONS.len());
+        assert!(db.list_roles().unwrap().is_empty(), "table exists, seeding happens in seed.rs");
+    }
 
     #[test]
     fn device_id_is_stable_across_reopen() {

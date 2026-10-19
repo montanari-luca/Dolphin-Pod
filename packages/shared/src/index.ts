@@ -29,4 +29,5 @@ export type { SettingType } from "./generated/SettingType";
 export type { ToastLevel } from "./generated/ToastLevel";
 export type { UpdateInfo } from "./generated/UpdateInfo";
 export type { UsageStats } from "./generated/UsageStats";
+export type { UserRole } from "./generated/UserRole";
 export type { JsonValue } from "./generated/serde_json/JsonValue";

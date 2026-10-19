@@ -44,6 +44,8 @@ device (`usage` primary key `agent_id, device_id`) and summed on read; cleanup w
 - [ ] Merge rules: last-writer-wins per field (agents, chats, settings, providers, automations, preferences);
       append-only for messages (content immutable once `done`; status and meta merge by field); tombstones always
       win over older writes; usage rows are never merged, only summed.
+- [ ] The user's profile syncs too: `user_roles` (schema v2, already tombstone-ready) and the `profile.display_name`
+      setting, with LWW per role.
 - [ ] Per-platform agent overrides: `agents.ios_model` (exists) syncs as its own field and never clobbers `model`.
 - [ ] Transport: `SyncBackend` trait with a Postgres implementation (`tokio-postgres` + rustls). Remote schema is
       one `records` table (`id`, `kind`, `hlc`, `device_id`, `ciphertext`, `nonce`, `deleted`) plus `devices`

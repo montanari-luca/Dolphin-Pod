@@ -9,11 +9,12 @@ import type {
   ProviderConfig,
   ProviderKindInfo,
   UsageStats,
+  UserRole,
 } from "@dolphin/shared";
 import { backend, errorText, type AppInfo, type Backend, type Settings } from "@/ipc/api";
 
 export type View = "chat" | "settings" | "automations";
-export type SettingsTab = "general" | "providers" | "agents" | "preferences" | "appearance" | "about";
+export type SettingsTab = "profile" | "general" | "providers" | "agents" | "preferences" | "appearance" | "about";
 
 export interface Toast {
   id: number;
@@ -34,6 +35,7 @@ interface State {
   bootError: string | null;
 
   agents: Agent[];
+  roles: UserRole[];
   chats: Chat[];
   messages: Record<string, Message[]>;
   settings: Settings;
@@ -72,6 +74,7 @@ export const useApp = create<State>((set, get) => ({
   ready: false,
   bootError: null,
   agents: [],
+  roles: [],
   chats: [],
   messages: {},
   settings: {},
@@ -96,9 +99,10 @@ export const useApp = create<State>((set, get) => ({
       const api = await backend();
       set({ api });
       await api.subscribe((e) => get().apply(e));
-      const [info, agents, chats, settings, usage, providers, kinds] = await Promise.all([
+      const [info, agents, roles, chats, settings, usage, providers, kinds] = await Promise.all([
         api.appInfo(),
         api.listAgents(),
+        api.listRoles(),
         api.listChats(),
         api.globalSettings(),
         api.usageAll(),
@@ -110,6 +114,7 @@ export const useApp = create<State>((set, get) => ({
       set({
         info,
         agents,
+        roles,
         chats,
         settings,
         usage: Object.fromEntries(usage.map((u) => [u.agentId, u])),
@@ -197,6 +202,9 @@ export const useApp = create<State>((set, get) => ({
         break;
       case "agentChanged":
         set((s) => ({ agents: s.agents.map((a) => (a.id === e.agent.id ? e.agent : a)) }));
+        break;
+      case "rolesChanged":
+        set({ roles: e.roles });
         break;
       case "settingChanged":
         if (e.change.type === "global") {

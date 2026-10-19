@@ -29,6 +29,10 @@ export function tauriBackend(): Backend {
     actionLog: (chatId) => invoke("action_log", { chatId }),
     usageAll: () => invoke("usage_all"),
     resolveConfirmation: (id, accepted) => invoke("resolve_confirmation", { id, accepted }),
+    listRoles: () => invoke("list_roles"),
+    saveRole: (role) => invoke("save_role", { role }),
+    deleteRole: (roleId) => invoke("delete_role", { roleId }),
+    reorderRoles: (roleIds) => invoke("reorder_roles", { roleIds }),
     stageAttachment: (name, mime, bytes) =>
       invoke("stage_attachment", bytes, {
         headers: { "x-name": encodeURIComponent(name), "x-mime": encodeURIComponent(mime) },

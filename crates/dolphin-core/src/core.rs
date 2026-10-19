@@ -42,6 +42,7 @@ impl Core {
     pub fn with_db(db: Db, data_dir: &Path, secrets: Arc<dyn SecretStore>) -> Result<CoreRef> {
         std::fs::create_dir_all(data_dir.join("attachments"))?;
         seed::seed_if_needed(&db)?;
+        seed::seed_roles_if_needed(&db)?;
         db.recover_interrupted_messages()?;
         let (events, _) = broadcast::channel(4096);
         Ok(Arc::new(Self {
@@ -363,6 +364,61 @@ impl Core {
 
     pub fn usage_all(&self) -> Result<Vec<UsageStats>> {
         self.db.usage_all()
+    }
+
+    // ---------------------------------------------------------------- the user's roles (cosmetic)
+
+    pub fn list_roles(&self) -> Result<Vec<UserRole>> {
+        self.db.list_roles()
+    }
+
+    pub fn save_role(&self, role: UserRole) -> Result<UserRole> {
+        let mut role = role;
+        role.name = role.name.trim().to_string();
+        if role.name.is_empty() || role.name.chars().count() > 24 {
+            return Err(CoreError::invalid("role names need 1-24 characters"));
+        }
+        if role.icon.trim().is_empty() || role.icon.len() > 32 {
+            return Err(CoreError::invalid("pick an icon for the role"));
+        }
+        if !settings::valid_color(&role.color) {
+            return Err(CoreError::invalid("the role color must be a hex color or a gradient of 2-8 stops"));
+        }
+        let existing = self.db.list_roles()?;
+        if existing.iter().any(|r| r.id != role.id && r.name.eq_ignore_ascii_case(&role.name)) {
+            return Err(CoreError::invalid(format!("you already have a role called {}", role.name)));
+        }
+        if role.id.is_empty() {
+            role.id = new_id();
+            role.sort = existing.iter().map(|r| r.sort).max().map_or(0, |m| m + 1);
+        }
+        let saved = self.db.upsert_role(&role)?;
+        self.emit_roles()?;
+        Ok(saved)
+    }
+
+    pub fn delete_role(&self, id: &str) -> Result<()> {
+        self.db.delete_role(id)?;
+        self.emit_roles()
+    }
+
+    /// Reorder roles; the first one colors the user's name.
+    pub fn reorder_roles(&self, ids: Vec<String>) -> Result<Vec<UserRole>> {
+        let roles = self.db.list_roles()?;
+        for (i, id) in ids.iter().enumerate() {
+            if let Some(r) = roles.iter().find(|r| &r.id == id) {
+                let mut r = r.clone();
+                r.sort = i as i32;
+                self.db.upsert_role(&r)?;
+            }
+        }
+        self.emit_roles()?;
+        self.db.list_roles()
+    }
+
+    fn emit_roles(&self) -> Result<()> {
+        self.emit(CoreEvent::RolesChanged { roles: self.db.list_roles()? });
+        Ok(())
     }
 
     // ---------------------------------------------------------------- automations

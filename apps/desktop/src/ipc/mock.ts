@@ -14,6 +14,7 @@ import type {
   ProviderKindInfo,
   SettingDef,
   UsageStats,
+  UserRole,
 } from "@dolphin/shared";
 import type { Backend, Settings } from "./api";
 
@@ -102,11 +103,18 @@ export function mockBackend(): Backend {
   const providers: ProviderConfig[] = [];
   const grants: PermissionGrant[] = [];
   const automations: Automation[] = [];
+  let roles: UserRole[] = [
+    {
+      id: "r-master", name: "Master", icon: "crown", sort: 0, updatedAt: now(),
+      color: { type: "gradient", angle: 90, stops: [["#ff3b5c", 0], ["#ff9f1c", 20], ["#ffd60a", 38], ["#2ee59d", 56], ["#3d8bfd", 76], ["#b15cff", 100]].map(([color, position]) => ({ color: color as string, position: position as number })) },
+    },
+  ];
+  const emitRoles = () => emit({ type: "rolesChanged", roles: structuredClone(roles) });
   const settings: Settings = {
     "appearance.theme": "system", "appearance.reduce_motion": false, "appearance.reduce_transparency": false,
     "cleanup.enabled": true, "cleanup.default_ttl_hours": 24, "preferences.custom_instructions": "", "utility.model": null,
     "supervisor.stall_seconds": 120, "updates.auto_check": true, "context.history_messages": 40, "chat.paste_threshold": 6000,
-    "routing.show_briefs": true, "app.onboarded": false,
+    "routing.show_briefs": true, "app.onboarded": false, "profile.display_name": "You",
   };
 
   const msg = (chatId: string, agentId: string | null, kind: Message["kind"], content: string, status: Message["status"] = "done"): Message => ({
@@ -233,6 +241,23 @@ export function mockBackend(): Backend {
     actionLog: async () => [],
     usageAll: async () => [...usage.values()],
     resolveConfirmation: async () => {},
+    listRoles: async () => structuredClone(roles),
+    async saveRole(r) {
+      if (roles.some((x) => x.id !== r.id && x.name.toLowerCase() === r.name.trim().toLowerCase())) throw `you already have a role called ${r.name}`;
+      const saved = { ...r, name: r.name.trim(), id: r.id || uid(), sort: r.id ? r.sort : roles.length, updatedAt: now() };
+      roles = r.id ? roles.map((x) => (x.id === r.id ? saved : x)) : [...roles, saved];
+      emitRoles();
+      return saved;
+    },
+    async deleteRole(id) {
+      roles = roles.filter((r) => r.id !== id);
+      emitRoles();
+    },
+    async reorderRoles(ids) {
+      roles = ids.map((id, i) => ({ ...roles.find((r) => r.id === id)!, sort: i }));
+      emitRoles();
+      return structuredClone(roles);
+    },
     stageAttachment: async (name, mime, bytes) => ({ id: uid(), name, mime, kind: mime.startsWith("image/") ? "image" : "text", size: bytes.length, path: URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime })) }),
     stageAttachmentPath: async (path) => ({ id: uid(), name: path.split("/").pop() ?? path, mime: "text/plain", kind: "text", size: 0, path }),
     providerKinds: async () => KINDS,

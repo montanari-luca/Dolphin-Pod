@@ -54,6 +54,8 @@ pub struct AgentPromptInput<'a> {
     pub permission: PermissionLevel,
     pub has_image_tool: bool,
     pub preferences: &'a [String],
+    /// The user's display name, if they set one other than the default "You".
+    pub user_name: Option<&'a str>,
 }
 
 pub fn agent_system(i: &AgentPromptInput) -> String {
@@ -78,6 +80,9 @@ pub fn agent_system(i: &AgentPromptInput) -> String {
         mode = mode_instruction(i.mode),
         perms = permissions_text(i.chat.workspace_path.as_deref(), i.permission, i.has_image_tool),
     );
+    if let Some(n) = i.user_name {
+        s.push_str(&format!("\n\nThe user's name is {n}. User messages in the history are theirs."));
+    }
     if !i.preferences.is_empty() {
         s.push_str("\n\nThe user's preferences that apply to this request:\n");
         for p in i.preferences {

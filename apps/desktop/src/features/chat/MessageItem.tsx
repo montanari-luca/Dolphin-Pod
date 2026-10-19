@@ -2,7 +2,8 @@ import { AnimatePresence, motion } from "motion/react";
 import { AlertTriangle, ArrowRight, CheckCircle2, ChevronRight, CircleSlash, ClipboardList, Copy, FileText, Loader2, Settings2, ShieldAlert, Sparkles, Wrench } from "lucide-react";
 import { memo, useState } from "react";
 import type { Agent, Attachment, Message } from "@dolphin/shared";
-import { AgentAvatar, AgentHoverCard, AgentName, UserAvatar } from "@/components/agent";
+import { AgentAvatar, AgentHoverCard, AgentName } from "@/components/agent";
+import { UserAvatar, UserHoverCard, UserNameText } from "@/components/user";
 import { Markdown } from "@/components/Markdown";
 import { ThinkingBlock } from "@/components/ThinkingBlock";
 import { Badge, Button, Dialog } from "@/components/ui";
@@ -30,7 +31,11 @@ export const MessageItem = memo(function MessageItem({ message, agent, grouped }
   return (
     <div className={cn("group relative flex gap-3 px-5 transition-colors hover:bg-hover/40", grouped ? "pt-0.5 pb-1" : "pt-3 pb-1")}>
       <div className="w-9 shrink-0 pt-0.5">
-        {!grouped && (isUser ? <UserAvatar size={36} /> : agent && (
+        {!grouped && (isUser ? (
+          <UserHoverCard side="right">
+            <span><UserAvatar size={36} /></span>
+          </UserHoverCard>
+        ) : agent && (
           <AgentHoverCard agent={agent} side="right">
             <span><AgentAvatar agent={agent} size={36} busy={streaming} /></span>
           </AgentHoverCard>
@@ -40,7 +45,11 @@ export const MessageItem = memo(function MessageItem({ message, agent, grouped }
       <div className="min-w-0 flex-1">
         {!grouped && (
           <div className="flex items-baseline gap-2 leading-tight mb-0.5">
-            {isUser ? <span className="text-[14px] font-semibold text-fg">You</span> : agent && <AgentName agent={agent} className="text-[14px]" />}
+            {isUser ? (
+              <UserHoverCard>
+                <span className="cursor-default"><UserNameText className="text-[14px]" /></span>
+              </UserHoverCard>
+            ) : agent && <AgentName agent={agent} className="text-[14px]" />}
             {!isUser && meta.routing?.mode && meta.routing.mode !== "answer" && <Badge tone={meta.routing.mode === "plan" ? "warning" : "accent"}>{MODE_LABEL[meta.routing.mode] ?? meta.routing.mode}</Badge>}
             {meta.routing?.via === "mention" && <Badge>direct</Badge>}
             <span className="text-[11px] text-faint tabular-nums">{formatTime(message.createdAt)}</span>
