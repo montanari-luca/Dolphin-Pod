@@ -1,0 +1,3 @@
+[env]
+# ts-rs writes the generated TypeScript bindings into the shared package.
+TS_RS_EXPORT_DIR = { value = "packages/shared/src/generated", relative = true }

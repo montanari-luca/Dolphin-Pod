@@ -1,0 +1,20 @@
+{
+  "name": "dolphin-pod",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Dolphin Pod: a Discord-like home for your AI agents. By MintFlow Technologies.",
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "dev": "pnpm --filter @dolphin/desktop tauri dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "bindings": "cargo test -p dolphin-core export_bindings",
+    "icons": "python3 packages/brand/scripts/make_icons.py"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.9",
+    "prettier": "^3.6.2"
+  }
+}
