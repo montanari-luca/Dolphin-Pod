@@ -168,11 +168,15 @@ impl Core {
             req.json_mode = true;
             (p, req)
         });
-        let (decision, err) = tokio::select! {
+        let started = Instant::now();
+        let (decision, err, used) = tokio::select! {
             r = moderator::decide(roger_model.as_ref().map(|(p, r)| (p.as_ref(), r.clone())), &input) => r,
             _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
         };
         self.activity(&turn.chat.id, &roger.id, AgentActivity::Idle, None);
+        if roger_model.is_some() {
+            self.record_internal_usage(&roger.id, &used, started)?;
+        }
 
         let approving = decision.approves_plan && pending_plan.is_some();
         let target_names: Vec<String> = if approving {
@@ -233,11 +237,15 @@ impl Core {
             }
             self.activity(&turn.chat.id, &lincoln.id, AgentActivity::Routing, Some(format!("Briefing {}", agent.name)));
             let recent = self.recent_context(turn, 6);
-            let brief_text = tokio::select! {
+            let started = Instant::now();
+            let (brief_text, used) = tokio::select! {
                 b = orchestrator::brief(lincoln_model.as_ref().map(|(p, r)| (p.as_ref(), r.clone())), d, agent, &turn.user_msg.content, &recent) => b,
                 _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
             };
             self.activity(&turn.chat.id, &lincoln.id, AgentActivity::Idle, None);
+            if used.input_tokens + used.output_tokens > 0 {
+                self.record_internal_usage(&lincoln.id, &used, started)?;
+            }
             let others: Vec<&Agent> = targets.iter().filter(|a| a.id != agent.id).collect();
             let orders = orchestrator::orders(d, agent, &others);
             let task = AgentTask {
@@ -293,6 +301,14 @@ impl Core {
             self.post(chat_id, &lincoln.id, MessageKind::Notice, &format!("{text}{extra}"), json!({ "notice": "permission", "level": level }))?;
         }
         Ok(g)
+    }
+
+    /// Usage for internal work (Roger's routing, Lincoln's briefs) counts toward those agents too.
+    fn record_internal_usage(&self, agent_id: &str, used: &crate::providers::Usage, started: Instant) -> Result<()> {
+        let ms = started.elapsed().as_millis() as i64;
+        self.db.record_usage(agent_id, used.input_tokens, used.output_tokens, 0, ms)?;
+        self.emit(CoreEvent::UsageUpdated { usage: self.db.usage_for(agent_id)? });
+        Ok(())
     }
 
     // ---------------------------------------------------------------- model plumbing

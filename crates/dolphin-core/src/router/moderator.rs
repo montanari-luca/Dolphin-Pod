@@ -5,7 +5,7 @@ use serde::Deserialize;
 
 use super::{Decision, Mode, Rewrite, fallback, prompts::first_sentence};
 use crate::model::{Agent, AgentRole, Message, PermissionLevel};
-use crate::providers::{ChatMessage, ChatRequest, Provider, complete};
+use crate::providers::{ChatMessage, ChatRequest, Provider, Usage, complete};
 use crate::util::{extract_json_object, truncate};
 
 #[derive(Debug, Deserialize, Default)]
@@ -173,19 +173,23 @@ pub fn parse_decision(reply: &str, members: &[Agent], user_text: &str, preferenc
 }
 
 /// Run the moderator model; fall back to keywords if it is unavailable or unusable.
-pub async fn decide(provider: Option<(&dyn Provider, ChatRequest)>, input: &ModeratorInput<'_>) -> (Decision, Option<String>) {
+/// Returns the decision, the model error (if it fell back) and the tokens the moderator used.
+pub async fn decide(provider: Option<(&dyn Provider, ChatRequest)>, input: &ModeratorInput<'_>) -> (Decision, Option<String>, Usage) {
     let fallback = || {
         let mut d = fallback::route(input.user_text, input.members, prefers_quick(input.preferences));
         d.source = "fallback".into();
         d
     };
-    let Some((provider, mut req)) = provider else { return (fallback(), None) };
+    let Some((provider, mut req)) = provider else { return (fallback(), None, Usage::default()) };
     let mut last_err = None;
+    let mut used = Usage::default();
     for attempt in 0..2 {
         match complete(provider, req.clone()).await {
-            Ok((text, _)) => {
+            Ok((text, u)) => {
+                used.input_tokens += u.input_tokens;
+                used.output_tokens += u.output_tokens;
                 if let Some(d) = parse_decision(&text, input.members, input.user_text, input.preferences) {
-                    return (d, None);
+                    return (d, None, used);
                 }
                 if attempt == 0 {
                     req.messages.push(ChatMessage::assistant(truncate(&text, 2000)));
@@ -198,7 +202,7 @@ pub async fn decide(provider: Option<(&dyn Provider, ChatRequest)>, input: &Mode
             }
         }
     }
-    (fallback(), last_err)
+    (fallback(), last_err, used)
 }
 
 #[cfg(test)]

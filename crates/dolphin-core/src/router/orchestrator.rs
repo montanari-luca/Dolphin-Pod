@@ -3,7 +3,7 @@
 
 use super::{Decision, Mode, Rewrite};
 use crate::model::Agent;
-use crate::providers::{ChatMessage, ChatRequest, Provider, complete};
+use crate::providers::{ChatMessage, ChatRequest, Provider, Usage, complete};
 use crate::util::truncate;
 
 pub fn rewrite_system(level: Rewrite) -> &'static str {
@@ -26,18 +26,18 @@ pub fn orders(d: &Decision, agent: &Agent, others: &[&Agent]) -> String {
     s
 }
 
-/// Build the brief. With `Rewrite::None` (or no model available) the user's words pass through unchanged.
+/// Build the brief (and the tokens it cost). With `Rewrite::None` (or no model) the user's words pass through unchanged.
 pub async fn brief(
     provider: Option<(&dyn Provider, ChatRequest)>,
     d: &Decision,
     agent: &Agent,
     user_text: &str,
     recent_context: &str,
-) -> String {
+) -> (String, Usage) {
     if d.rewrite == Rewrite::None {
-        return user_text.to_string();
+        return (user_text.to_string(), Usage::default());
     }
-    let Some((provider, mut req)) = provider else { return user_text.to_string() };
+    let Some((provider, mut req)) = provider else { return (user_text.to_string(), Usage::default()) };
     req.system = rewrite_system(d.rewrite).to_string();
     req.messages = vec![ChatMessage::user(format!(
         "Specialist: {} ({})\nIntent: {}\n\nRecent conversation:\n{}\n\nUser request:\n{}",
@@ -50,7 +50,8 @@ pub async fn brief(
     req.tools.clear();
     req.json_mode = false;
     match complete(provider, req).await {
-        Ok((text, _)) if !text.trim().is_empty() => truncate(text.trim(), 6000),
-        _ => user_text.to_string(),
+        Ok((text, u)) if !text.trim().is_empty() => (truncate(text.trim(), 6000), u),
+        Ok((_, u)) => (user_text.to_string(), u),
+        Err(_) => (user_text.to_string(), Usage::default()),
     }
 }
