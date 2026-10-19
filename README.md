@@ -59,7 +59,7 @@ pnpm dev
 | Frontend tests | `pnpm --filter @dolphin/desktop test` |
 | Regenerate TS types from Rust | `pnpm bindings` |
 | Regenerate all icons | `python3 packages/brand/scripts/make_icons.py` |
-| Live run against Ollama | `cargo run -p dolphin-core --example live_ollama -- qwen3:4b` |
+| Live run against Ollama | `cargo run -p dolphin-core --example live_ollama -- qwen3.5:2b` |
 | Release build | `pnpm --filter @dolphin/desktop tauri build` |
 
 Data lives in the OS app-data folder (`dolphin-pod.db`, SQLite). API keys are stored in the system keychain.

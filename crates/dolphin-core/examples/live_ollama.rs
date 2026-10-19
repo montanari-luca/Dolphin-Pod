@@ -1,6 +1,6 @@
 //! Live end-to-end run against a local Ollama server (no mocks):
 //!
-//!     cargo run -p dolphin-core --example live_ollama -- qwen3:4b
+//!     cargo run -p dolphin-core --example live_ollama -- qwen3.5:2b
 //!
 //! Exercises every default chat plus the two example workflows (Java question → Prof;
 //! plan → read-only → approval → full permissions), an @mention and a chat-driven cleanup.
@@ -72,7 +72,7 @@ fn report(core: &CoreRef, msgs: &[Message], since: usize) {
 
 #[tokio::main]
 async fn main() {
-    let model = std::env::args().nth(1).unwrap_or_else(|| "qwen3:4b".into());
+    let model = std::env::args().nth(1).unwrap_or_else(|| "qwen3.5:2b".into());
     let dir = tempfile::tempdir().unwrap();
     let core = Core::with_db(Db::open_in_memory().unwrap(), dir.path(), Arc::new(MemoryStore::default())).unwrap();
     dolphin_core::scheduler::spawn(core.clone());

@@ -83,7 +83,7 @@ fn pod(configure: &[&str]) -> Pod {
     for a in core.list_agents().unwrap() {
         if configure.contains(&a.slug.as_str()) {
             let mut a = a;
-            a.model = Some(ModelRef { provider_id: cfg.id.clone(), model_id: "qwen3:4b".into(), effort: Some(EffortValue::Toggle(true)), vision: false, tools: true });
+            a.model = Some(ModelRef { provider_id: cfg.id.clone(), model_id: "qwen3.5:2b".into(), effort: Some(EffortValue::Toggle(true)), vision: false, tools: true });
             core.update_agent(a).unwrap();
         }
     }

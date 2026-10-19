@@ -246,7 +246,7 @@ export function mockBackend(): Backend {
     },
     deleteProvider: async (pid) => void providers.splice(providers.findIndex((p) => p.id === pid), 1),
     listModels: async (): Promise<ModelInfo[]> => [
-      { id: "qwen3:8b", name: "qwen3:8b", reasoning: true, reason: null, effort: { type: "toggle" }, vision: false, tools: true, imageOutput: false, contextWindow: 40960, free: true },
+      { id: "qwen3.5:2b", name: "qwen3.5:2b", reasoning: true, reason: null, effort: { type: "toggle" }, vision: false, tools: true, imageOutput: false, contextWindow: 40960, free: true },
       { id: "gpt-oss:20b", name: "gpt-oss:20b", reasoning: true, reason: null, effort: { type: "levels", levels: ["low", "medium", "high"], default: "medium" }, vision: false, tools: true, imageOutput: false, contextWindow: 131072, free: true },
       { id: "llama3.1:8b", name: "llama3.1:8b", reasoning: false, reason: "Not a reasoning model. Dolphin Pod agents need models that think before answering.", effort: { type: "none" }, vision: false, tools: true, imageOutput: false, contextWindow: null, free: true },
     ],

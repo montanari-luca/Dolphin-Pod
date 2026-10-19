@@ -8,7 +8,7 @@ import { useApp } from "@/store/app";
 import { PageHeader } from "./SettingsView";
 
 const HINTS: Partial<Record<ProviderKind, string>> = {
-  ollama: "Runs models locally. Install from ollama.com and pull a thinking model, e.g. `ollama pull qwen3`.",
+  ollama: "Runs models locally. Install from ollama.com and pull a thinking model, e.g. `ollama pull qwen3.5:2b`.",
   lm_studio: "Start the local server in LM Studio (Developer → Start server).",
   custom_openai: "Any OpenAI-compatible server (vLLM, llama.cpp, LocalAI…).",
   openrouter: "One key for hundreds of models, including free ones.",
