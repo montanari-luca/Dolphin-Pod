@@ -34,10 +34,10 @@ pub fn permissions_text(workspace: Option<&str>, level: PermissionLevel, has_ima
     let mut s = match (workspace, level) {
         (None, _) => "You have no file or command access in this chat.".to_string(),
         (Some(ws), PermissionLevel::ReadOnly) => format!(
-            "Workspace folder: {ws}\nYou are READ-ONLY right now: you may use read_file, list_dir and search. Writing files and running commands are not permitted. If the task needs them, say so; the user can approve a plan or grant full permissions."
+            "Workspace folder: {ws}\nUse paths relative to the workspace root in tools (e.g. `main.py`, `src/app.ts`); call list_dir first if unsure.\nYou are READ-ONLY right now: you may use read_file, list_dir and search. Writing files and running commands are not permitted. If the task needs them, say so; the user can approve a plan or grant full permissions."
         ),
         (Some(ws), PermissionLevel::Full) => format!(
-            "Workspace folder: {ws}\nYou have full agentic permissions inside the workspace: read, search, write and edit files, and run commands. Every action is logged and shown to the user. Avoid destructive commands unless the user explicitly asked for them."
+            "Workspace folder: {ws}\nUse paths relative to the workspace root in tools (e.g. `main.py`, `src/app.ts`); call list_dir first if unsure.\nYou have full agentic permissions inside the workspace: read, search, write and edit files, and run commands. Every action is logged and shown to the user. Avoid destructive commands unless the user explicitly asked for them."
         ),
     };
     if has_image_tool {

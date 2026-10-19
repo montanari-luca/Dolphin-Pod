@@ -174,16 +174,23 @@ impl Core {
         };
         self.activity(&turn.chat.id, &roger.id, AgentActivity::Idle, None);
 
-        let target_names: Vec<String> = decision.targets.iter().filter_map(|id| turn.members.iter().find(|a| &a.id == id)).map(|a| a.name.clone()).collect();
+        let approving = decision.approves_plan && pending_plan.is_some();
+        let target_names: Vec<String> = if approving {
+            // The plan's author implements it, whoever the moderator named.
+            pending_by.iter().cloned().collect()
+        } else {
+            decision.targets.iter().filter_map(|id| turn.members.iter().find(|a| &a.id == id)).map(|a| a.name.clone()).collect()
+        };
         ack_msg.meta = json!({ "routing": {
-            "status": "done", "mode": decision.mode.as_str(), "intent": decision.intent, "targets": target_names,
+            "status": "done",
+            "mode": if approving { "implement" } else { decision.mode.as_str() },
+            "intent": if approving { "plan approved".to_string() } else { decision.intent.clone() },
+            "targets": target_names,
             "source": decision.source, "needsSetup": roger.model.is_none(), "error": err,
         }});
         self.save_message(&ack_msg)?;
 
-        if decision.approves_plan
-            && let Some(plan) = pending_plan
-        {
+        if approving && let Some(plan) = pending_plan {
             return self.run_approved_plan(&turn.chat, plan, &turn.token).await;
         }
         if let Some(note) = &decision.lean_note {
