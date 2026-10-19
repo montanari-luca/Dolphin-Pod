@@ -73,6 +73,11 @@ impl Core {
         let _ = self.events.send(ev);
     }
 
+    /// Publish an event from outside the core (e.g. the shell's update checker).
+    pub fn announce(&self, ev: CoreEvent) {
+        self.emit(ev);
+    }
+
     pub(crate) fn activity(&self, chat_id: &str, agent_id: &str, activity: AgentActivity, detail: Option<String>) {
         self.emit(CoreEvent::AgentActivity { chat_id: chat_id.into(), agent_id: agent_id.into(), activity, detail });
     }

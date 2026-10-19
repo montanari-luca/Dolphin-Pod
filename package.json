@@ -10,7 +10,7 @@
     "test": "turbo run test",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "bindings": "cargo test -p dolphin-core export_bindings",
+    "bindings": "cargo test -p dolphin-core export_bindings && node packages/shared/scripts/gen-index.mjs",
     "icons": "python3 packages/brand/scripts/make_icons.py"
   },
   "devDependencies": {

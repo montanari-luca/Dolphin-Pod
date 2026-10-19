@@ -1,0 +1,165 @@
+/*
+ * Dolphin Pod design tokens. Frosted glass over a soft gradient taken from the logo
+ * (ocean blue → lilac → peach → coral). Shared by the desktop app and the website.
+ *
+ * Theme: <html data-theme="dark|light|system">. "system" follows prefers-color-scheme.
+ * Accessibility: data-reduce-transparency="true" swaps glass for solid surfaces;
+ * data-reduce-motion="true" (or the OS setting) shortens all motion tokens to ~0.
+ */
+
+:root {
+  --brand-blue: #2f8fe0;
+  --brand-sky: #5ab4ec;
+  --brand-lilac: #a77bdb;
+  --brand-peach: #fbb36a;
+  --brand-coral: #f7826f;
+  --brand-gradient: linear-gradient(135deg, #2f8fe0 0%, #a77bdb 52%, #f7826f 100%);
+  --brand-gradient-soft: linear-gradient(135deg, rgba(47, 143, 224, 0.18), rgba(167, 123, 219, 0.16) 50%, rgba(247, 130, 111, 0.16));
+
+  --radius-xs: 6px;
+  --radius-sm: 9px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+
+  --blur-panel: 28px;
+  --blur-float: 18px;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 360ms;
+
+  --font-sans: "Inter Variable", "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --danger: #ef5a5a;
+  --success: #2fbf86;
+  --warning: #f2a33a;
+}
+
+/* ---------------------------------------------------------------- dark (default) */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-base: #0b1020;
+  --bg-glow-1: rgba(47, 143, 224, 0.28);
+  --bg-glow-2: rgba(167, 123, 219, 0.22);
+  --bg-glow-3: rgba(247, 130, 111, 0.16);
+
+  --surface-0: rgba(12, 17, 34, 0.55);
+  --surface-1: rgba(22, 28, 50, 0.58);
+  --surface-2: rgba(34, 42, 70, 0.62);
+  --surface-solid: #141a30;
+  --surface-hover: rgba(255, 255, 255, 0.06);
+  --surface-active: rgba(255, 255, 255, 0.1);
+  --surface-input: rgba(8, 12, 26, 0.55);
+  --surface-float: rgba(24, 30, 54, 0.82);
+
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --highlight: rgba(255, 255, 255, 0.07);
+
+  --text: #eef1fb;
+  --text-muted: #a5adc8;
+  --text-faint: #6f7898;
+  --text-on-accent: #ffffff;
+
+  --accent: #6aa8ff;
+  --accent-soft: rgba(106, 168, 255, 0.16);
+  --focus-ring: rgba(106, 168, 255, 0.55);
+
+  --code-bg: rgba(5, 8, 18, 0.6);
+  --shadow-float: 0 18px 50px -12px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-panel: 0 1px 0 var(--highlight) inset, 0 10px 40px -20px rgba(0, 0, 0, 0.6);
+}
+
+/* ---------------------------------------------------------------- light */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-base: #eef2fb;
+  --bg-glow-1: rgba(47, 143, 224, 0.22);
+  --bg-glow-2: rgba(167, 123, 219, 0.18);
+  --bg-glow-3: rgba(251, 179, 106, 0.2);
+
+  --surface-0: rgba(255, 255, 255, 0.45);
+  --surface-1: rgba(255, 255, 255, 0.62);
+  --surface-2: rgba(255, 255, 255, 0.78);
+  --surface-solid: #f8faff;
+  --surface-hover: rgba(20, 30, 60, 0.05);
+  --surface-active: rgba(20, 30, 60, 0.09);
+  --surface-input: rgba(255, 255, 255, 0.75);
+  --surface-float: rgba(255, 255, 255, 0.9);
+
+  --border: rgba(20, 30, 60, 0.09);
+  --border-strong: rgba(20, 30, 60, 0.18);
+  --highlight: rgba(255, 255, 255, 0.8);
+
+  --text: #141a2e;
+  --text-muted: #4f5875;
+  --text-faint: #858ea9;
+  --text-on-accent: #ffffff;
+
+  --accent: #2f7fe0;
+  --accent-soft: rgba(47, 127, 224, 0.12);
+  --focus-ring: rgba(47, 127, 224, 0.45);
+
+  --code-bg: rgba(240, 244, 252, 0.9);
+  --shadow-float: 0 18px 50px -14px rgba(30, 40, 80, 0.28), 0 2px 8px rgba(30, 40, 80, 0.1);
+  --shadow-panel: 0 1px 0 var(--highlight) inset, 0 10px 40px -24px rgba(30, 40, 80, 0.3);
+}
+
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"] {
+    color-scheme: light;
+    --bg-base: #eef2fb;
+    --bg-glow-1: rgba(47, 143, 224, 0.22);
+    --bg-glow-2: rgba(167, 123, 219, 0.18);
+    --bg-glow-3: rgba(251, 179, 106, 0.2);
+    --surface-0: rgba(255, 255, 255, 0.45);
+    --surface-1: rgba(255, 255, 255, 0.62);
+    --surface-2: rgba(255, 255, 255, 0.78);
+    --surface-solid: #f8faff;
+    --surface-hover: rgba(20, 30, 60, 0.05);
+    --surface-active: rgba(20, 30, 60, 0.09);
+    --surface-input: rgba(255, 255, 255, 0.75);
+    --surface-float: rgba(255, 255, 255, 0.9);
+    --border: rgba(20, 30, 60, 0.09);
+    --border-strong: rgba(20, 30, 60, 0.18);
+    --highlight: rgba(255, 255, 255, 0.8);
+    --text: #141a2e;
+    --text-muted: #4f5875;
+    --text-faint: #858ea9;
+    --accent: #2f7fe0;
+    --accent-soft: rgba(47, 127, 224, 0.12);
+    --focus-ring: rgba(47, 127, 224, 0.45);
+    --code-bg: rgba(240, 244, 252, 0.9);
+    --shadow-float: 0 18px 50px -14px rgba(30, 40, 80, 0.28), 0 2px 8px rgba(30, 40, 80, 0.1);
+    --shadow-panel: 0 1px 0 var(--highlight) inset, 0 10px 40px -24px rgba(30, 40, 80, 0.3);
+  }
+}
+
+/* ---------------------------------------------------------------- accessibility */
+:root[data-reduce-transparency="true"] {
+  --surface-0: var(--surface-solid);
+  --surface-1: var(--surface-solid);
+  --surface-2: var(--surface-solid);
+  --surface-float: var(--surface-solid);
+  --blur-panel: 0px;
+  --blur-float: 0px;
+}
+
+:root[data-reduce-motion="true"] {
+  --dur-fast: 1ms;
+  --dur-base: 1ms;
+  --dur-slow: 1ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 1ms;
+    --dur-base: 1ms;
+    --dur-slow: 1ms;
+  }
+}
