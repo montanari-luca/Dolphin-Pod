@@ -93,9 +93,7 @@ pub fn ndjson_stream(
             }
         }
         let rest = buf.trim();
-        if !rest.is_empty() {
-            if let Ok(v) = serde_json::from_str(rest) { yield Ok(v); }
-        }
+        if !rest.is_empty() && let Ok(v) = serde_json::from_str(rest) { yield Ok(v); }
     }
 }
 

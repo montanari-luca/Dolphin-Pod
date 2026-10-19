@@ -122,14 +122,25 @@ impl Db {
         Ok(msgs)
     }
 
-    /// Rolling cleanup: tombstone every finished message older than `cutoff_ms`. Returns how many were removed.
-    pub fn tombstone_messages_before(&self, chat_id: &str, cutoff_ms: i64) -> Result<usize> {
-        let n = self.conn().execute(
+    /// Rolling cleanup: tombstone every finished message older than `cutoff_ms`. Returns the removed ids.
+    pub fn tombstone_messages_before(&self, chat_id: &str, cutoff_ms: i64) -> Result<Vec<String>> {
+        let conn = self.conn();
+        let ids = {
+            let mut st = conn.prepare(
+                "SELECT id FROM messages WHERE chat_id = ?1 AND deleted = 0 AND created_at < ?2
+                 AND status NOT IN ('pending', 'streaming')",
+            )?;
+            st.query_map(params![chat_id, cutoff_ms], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        if ids.is_empty() {
+            return Ok(ids);
+        }
+        conn.execute(
             "UPDATE messages SET deleted = 1, content = '', reasoning = NULL, meta = '{}', updated_at = ?3, device_id = ?4
              WHERE chat_id = ?1 AND deleted = 0 AND created_at < ?2 AND status NOT IN ('pending', 'streaming')",
             params![chat_id, cutoff_ms, now_ms(), self.device_id()],
         )?;
-        Ok(n)
+        Ok(ids)
     }
 
     pub fn tombstone_message(&self, id: &str) -> Result<()> {
@@ -141,7 +152,7 @@ impl Db {
     }
 
     /// Clear every message in a chat (manual "clean this chat").
-    pub fn tombstone_all_messages(&self, chat_id: &str) -> Result<usize> {
+    pub fn tombstone_all_messages(&self, chat_id: &str) -> Result<Vec<String>> {
         self.tombstone_messages_before(chat_id, i64::MAX)
     }
 
@@ -193,7 +204,7 @@ impl Db {
             .ok_or_else(|| CoreError::NotFound(format!("attachment {id}")))
     }
 
-    fn link_attachment(&self, id: &str, message_id: &str, chat_id: &str) -> Result<()> {
+    pub(crate) fn link_attachment(&self, id: &str, message_id: &str, chat_id: &str) -> Result<()> {
         self.conn().execute(
             "UPDATE attachments SET message_id = ?2, chat_id = ?3, updated_at = ?4 WHERE id = ?1",
             params![id, message_id, chat_id, now_ms()],

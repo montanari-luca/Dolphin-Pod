@@ -1,0 +1,704 @@
+//! The chat pipeline: user message → (@mention | Roger's ack → moderator → Lincoln → specialists),
+//! agent runs with streaming, tool loops, permissions, supervision and usage accounting.
+
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use futures::StreamExt;
+use serde_json::{Value, json};
+use tokio_util::sync::CancellationToken;
+
+use crate::attachments;
+use crate::core::Core;
+use crate::error::{CoreError, Result};
+use crate::events::{AgentActivity, CoreEvent};
+use crate::model::*;
+use crate::providers::{ChatMessage, ChatRequest, Part, Provider, ProviderEvent, Role, ToolCall, image};
+use crate::router::moderator::{self, ModeratorInput};
+use crate::router::{Decision, Mode, ack, mention, orchestrator, prompts, settings_ctl};
+use crate::settings::{self, keys};
+use crate::tools;
+use crate::util::{now_ms, truncate};
+
+const MAX_TOOL_STEPS: usize = 40;
+const FLUSH_EVERY: Duration = Duration::from_millis(40);
+
+/// Everything one user turn needs, gathered once.
+struct Turn {
+    chat: Chat,
+    members: Vec<Agent>,
+    all_agents: Vec<Agent>,
+    user_msg: Message,
+    prefs: Vec<String>,
+    token: CancellationToken,
+}
+
+struct AgentTask {
+    mode: Mode,
+    /// Lincoln's orders + brief, appended after the history.
+    brief: Option<String>,
+    plan: bool,
+    routing: Value,
+}
+
+type ModelHandle = (Arc<dyn Provider>, ChatRequest);
+
+impl Core {
+    // ---------------------------------------------------------------- entry points
+
+    pub async fn send_message(self: &Arc<Self>, chat_id: &str, text: &str, attachment_ids: Vec<String>) -> Result<Message> {
+        self.send_message_with_meta(chat_id, text, attachment_ids, json!({})).await
+    }
+
+    pub async fn send_message_with_meta(
+        self: &Arc<Self>,
+        chat_id: &str,
+        text: &str,
+        attachment_ids: Vec<String>,
+        meta: Value,
+    ) -> Result<Message> {
+        let chat = self.db.get_chat(chat_id)?;
+        if text.trim().is_empty() && attachment_ids.is_empty() {
+            return Err(CoreError::invalid("the message is empty"));
+        }
+        let agents = self.db.list_agents()?;
+        let mut msg = self.new_message(&chat.id, None, MessageKind::Text, MessageStatus::Done, text.trim_end());
+        msg.mentions = mention::parse(text, &agents);
+        msg.meta = meta;
+        for id in &attachment_ids {
+            msg.attachments.push(self.db.get_attachment(id)?);
+        }
+        self.insert_message(&msg)?;
+        let core = self.clone();
+        let user_msg = msg.clone();
+        tokio::spawn(async move { core.pipeline(chat, user_msg).await });
+        Ok(msg)
+    }
+
+    /// Approve a plan (button). Lincoln escalates the planner to full permissions and starts the work.
+    pub async fn approve_plan(self: &Arc<Self>, message_id: &str) -> Result<()> {
+        let plan = self.db.get_message(message_id)?;
+        if plan.kind != MessageKind::Plan {
+            return Err(CoreError::invalid("that message is not a plan"));
+        }
+        if plan.meta["plan"]["approved"].as_bool() == Some(true) {
+            return Ok(());
+        }
+        let chat = self.db.get_chat(&plan.chat_id)?;
+        let core = self.clone();
+        tokio::spawn(async move {
+            let token = core.chat_token(&chat.id);
+            if let Err(e) = core.run_approved_plan(&chat, plan, &token).await {
+                core.pipeline_error(&chat.id, &e);
+            }
+        });
+        Ok(())
+    }
+
+    /// Explicit grant from the UI (permission badge).
+    pub fn grant_permission(&self, chat_id: &str, agent_id: &str, level: PermissionLevel) -> Result<PermissionGrant> {
+        let reason = if level == PermissionLevel::Full { "granted by you" } else { "set by you" };
+        self.change_grant(chat_id, agent_id, level, reason)
+    }
+
+    // ---------------------------------------------------------------- pipeline
+
+    async fn pipeline(self: Arc<Self>, chat: Chat, user_msg: Message) {
+        let token = self.chat_token(&chat.id);
+        if let Err(e) = self.pipeline_inner(chat.clone(), user_msg, token).await
+            && !matches!(e, CoreError::Cancelled)
+        {
+            self.pipeline_error(&chat.id, &e);
+        }
+    }
+
+    fn pipeline_error(&self, chat_id: &str, e: &CoreError) {
+        if let Ok(roger) = self.agent_by_slug("roger") {
+            let _ = self.post(chat_id, &roger.id, MessageKind::Notice, &format!("Something went wrong: {e}"), json!({ "notice": "error" }));
+        }
+    }
+
+    async fn pipeline_inner(self: &Arc<Self>, chat: Chat, user_msg: Message, token: CancellationToken) -> Result<()> {
+        let all_agents = self.db.list_agents()?;
+        let members: Vec<Agent> = all_agents.iter().filter(|a| chat.agent_ids.contains(&a.id)).cloned().collect();
+        let roger = self.agent_by_slug("roger")?;
+        let lincoln = self.agent_by_slug("lincoln")?;
+        let prefs = self.select_preferences(&roger, &user_msg.content).await;
+        let turn = Turn { chat, members, all_agents, user_msg, prefs, token };
+
+        // @mentions: straight to the agent, no moderator. Permissions still apply.
+        let mentioned: Vec<Agent> =
+            turn.user_msg.mentions.iter().filter_map(|id| turn.all_agents.iter().find(|a| &a.id == id).cloned()).collect();
+        let mentioned: Vec<Agent> = mentioned.into_iter().filter(|a| a.id != lincoln.id).collect();
+        if !mentioned.is_empty() {
+            for agent in mentioned {
+                if !turn.chat.agent_ids.contains(&agent.id) {
+                    self.post(&turn.chat.id, &roger.id, MessageKind::Notice,
+                        &format!("{} isn't in this chat. Add them in the chat settings to talk to them here.", agent.name), json!({}))?;
+                    continue;
+                }
+                let mode = if agent.id == roger.id { Mode::Answer } else { Mode::Implement };
+                let task = AgentTask { mode, brief: None, plan: false, routing: json!({ "via": "mention" }) };
+                self.run_agent(&turn, &agent, task).await?;
+            }
+            return Ok(());
+        }
+
+        // 1. Instant acknowledgment, no model call.
+        let mut ack_msg = self.post(&turn.chat.id, &roger.id, MessageKind::Ack, ack::random_ack(), json!({ "routing": { "status": "routing" } }))?;
+        self.activity(&turn.chat.id, &roger.id, AgentActivity::Routing, None);
+
+        // 2. Moderator reasoning.
+        let history = self.db.list_messages(&turn.chat.id, 12)?;
+        let pending_plan = history.iter().rev().find(|m| m.kind == MessageKind::Plan && m.status == MessageStatus::Done && m.meta["plan"]["approved"].as_bool() != Some(true)).cloned();
+        let pending_by = pending_plan.as_ref().and_then(|p| p.agent_id.as_ref()).and_then(|id| turn.all_agents.iter().find(|a| &a.id == id)).map(|a| a.name.clone());
+        let history_wo_ack: Vec<Message> = history.into_iter().filter(|m| m.kind != MessageKind::Ack && m.id != turn.user_msg.id).collect();
+        let input = ModeratorInput {
+            chat_name: &turn.chat.name,
+            members: &turn.members,
+            history: &history_wo_ack,
+            user_text: &turn.user_msg.content,
+            preferences: &turn.prefs,
+            pending_plan_by: pending_by.as_deref(),
+        };
+        let roger_model = self.model_handle(&roger, false).ok().map(|(p, mut req)| {
+            req.system = moderator::system_prompt(&input, &roger.name);
+            let names = |m: &Message| self.author_name(&turn.all_agents, m);
+            req.messages = vec![ChatMessage::user(moderator::user_prompt(&input, &names))];
+            req.json_mode = true;
+            (p, req)
+        });
+        let (decision, err) = tokio::select! {
+            r = moderator::decide(roger_model.as_ref().map(|(p, r)| (p.as_ref(), r.clone())), &input) => r,
+            _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
+        };
+        self.activity(&turn.chat.id, &roger.id, AgentActivity::Idle, None);
+
+        let target_names: Vec<String> = decision.targets.iter().filter_map(|id| turn.members.iter().find(|a| &a.id == id)).map(|a| a.name.clone()).collect();
+        ack_msg.meta = json!({ "routing": {
+            "status": "done", "mode": decision.mode.as_str(), "intent": decision.intent, "targets": target_names,
+            "source": decision.source, "needsSetup": roger.model.is_none(), "error": err,
+        }});
+        self.save_message(&ack_msg)?;
+
+        if decision.approves_plan
+            && let Some(plan) = pending_plan
+        {
+            return self.run_approved_plan(&turn.chat, plan, &turn.token).await;
+        }
+        if let Some(note) = &decision.lean_note {
+            self.post(&turn.chat.id, &roger.id, MessageKind::Text, &format!("💡 {note}"), json!({ "leanPrompt": true }))?;
+        }
+
+        match decision.mode {
+            Mode::Clarify => {
+                let q = decision.clarification.clone().unwrap_or_else(|| "Could you tell me a bit more about what you need?".into());
+                self.post(&turn.chat.id, &roger.id, MessageKind::Text, &q, json!({ "clarification": true }))?;
+            }
+            Mode::Internal => {
+                self.activity(&turn.chat.id, &roger.id, AgentActivity::Writing, Some("Updating settings".into()));
+                let utility = self.utility_handle(&roger);
+                let reply = settings_ctl::handle(self, &turn.chat, &turn.user_msg.content, utility.as_ref().map(|(p, r)| (p.as_ref(), r.clone()))).await;
+                self.activity(&turn.chat.id, &roger.id, AgentActivity::Idle, None);
+                if self.db.get_chat(&turn.chat.id).is_ok() {
+                    self.post(&turn.chat.id, &roger.id, MessageKind::Text, &reply, json!({ "settings": true }))?;
+                }
+            }
+            Mode::Answer => {
+                let task = AgentTask { mode: Mode::Answer, brief: None, plan: false, routing: json!({ "via": "moderator", "mode": "answer" }) };
+                self.run_agent(&turn, &roger, task).await?;
+            }
+            mode => self.dispatch(&turn, &decision, mode, &lincoln, &roger).await?,
+        }
+        Ok(())
+    }
+
+    /// Lincoln: brief each target and run them in order (each sees the previous answers).
+    async fn dispatch(self: &Arc<Self>, turn: &Turn, d: &Decision, mode: Mode, lincoln: &Agent, roger: &Agent) -> Result<()> {
+        let targets: Vec<Agent> = d.targets.iter().filter_map(|id| turn.members.iter().find(|a| &a.id == id).cloned()).collect();
+        let lincoln_model = self.model_handle(lincoln, false).or_else(|_| self.model_handle(roger, false)).ok();
+        for agent in &targets {
+            if turn.token.is_cancelled() {
+                return Err(CoreError::Cancelled);
+            }
+            if mode == Mode::Plan {
+                self.change_grant(&turn.chat.id, &agent.id, PermissionLevel::ReadOnly, "planning")?;
+            }
+            self.activity(&turn.chat.id, &lincoln.id, AgentActivity::Routing, Some(format!("Briefing {}", agent.name)));
+            let recent = self.recent_context(turn, 6);
+            let brief_text = tokio::select! {
+                b = orchestrator::brief(lincoln_model.as_ref().map(|(p, r)| (p.as_ref(), r.clone())), d, agent, &turn.user_msg.content, &recent) => b,
+                _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
+            };
+            self.activity(&turn.chat.id, &lincoln.id, AgentActivity::Idle, None);
+            let others: Vec<&Agent> = targets.iter().filter(|a| a.id != agent.id).collect();
+            let orders = orchestrator::orders(d, agent, &others);
+            let task = AgentTask {
+                mode,
+                brief: Some(format!("{orders}\n\nBrief:\n{brief_text}")),
+                plan: mode == Mode::Plan,
+                routing: json!({ "via": "lincoln", "mode": mode.as_str(), "rewrite": d.rewrite, "brief": brief_text }),
+            };
+            self.run_agent(turn, agent, task).await?;
+        }
+        Ok(())
+    }
+
+    async fn run_approved_plan(self: &Arc<Self>, chat: &Chat, mut plan: Message, token: &CancellationToken) -> Result<()> {
+        let agent_id = plan.agent_id.clone().ok_or_else(|| CoreError::invalid("plan has no author"))?;
+        let agent = self.db.get_agent(&agent_id)?;
+        plan.meta["plan"] = json!({ "approved": true, "approvedAt": now_ms() });
+        self.save_message(&plan)?;
+        self.change_grant(&chat.id, &agent.id, PermissionLevel::Full, "plan approved")?;
+
+        let all_agents = self.db.list_agents()?;
+        let members = all_agents.iter().filter(|a| chat.agent_ids.contains(&a.id)).cloned().collect();
+        let roger = self.agent_by_slug("roger")?;
+        let prefs = self.select_preferences(&roger, &plan.content).await;
+        let user_msg = self.db.list_messages(&chat.id, 50)?.into_iter().rev().find(|m| m.agent_id.is_none()).unwrap_or_else(|| plan.clone());
+        let turn = Turn { chat: chat.clone(), members, all_agents, user_msg, prefs, token: token.clone() };
+        let brief = format!(
+            "Lincoln (orchestrator) → {}: the user approved your plan above. You now have full agentic permissions in this chat. Implement the plan step by step, verify your work, then summarize what you changed.",
+            agent.name
+        );
+        let task = AgentTask { mode: Mode::Implement, brief: Some(brief), plan: false, routing: json!({ "via": "lincoln", "mode": "implement", "planApproved": plan.id }) };
+        self.run_agent(&turn, &agent, task).await.map(|_| ())
+    }
+
+    /// Change a grant; every change is announced in the chat by Lincoln.
+    fn change_grant(&self, chat_id: &str, agent_id: &str, level: PermissionLevel, reason: &str) -> Result<PermissionGrant> {
+        let before = self.db.grant(chat_id, agent_id)?;
+        let g = self.db.set_grant(chat_id, agent_id, level, reason)?;
+        self.emit(CoreEvent::GrantChanged { grant: g.clone() });
+        if before.level != level || before.updated_at == 0 && level == PermissionLevel::Full {
+            let agent = self.db.get_agent(agent_id)?;
+            let lincoln = self.agent_by_slug("lincoln")?;
+            let text = match level {
+                PermissionLevel::Full => format!("🔓 {} now has **full agentic permissions** in this chat ({reason}).", agent.name),
+                PermissionLevel::ReadOnly => format!("🔒 {} is **read-only** in this chat ({reason}).", agent.name),
+            };
+            let chat = self.db.get_chat(chat_id)?;
+            let extra = if level == PermissionLevel::Full && chat.workspace_path.is_none() {
+                " Set a workspace folder in the chat settings so they can work on your files."
+            } else {
+                ""
+            };
+            self.post(chat_id, &lincoln.id, MessageKind::Notice, &format!("{text}{extra}"), json!({ "notice": "permission", "level": level }))?;
+        }
+        Ok(g)
+    }
+
+    // ---------------------------------------------------------------- model plumbing
+
+    fn model_handle(&self, agent: &Agent, want_reasoning: bool) -> Result<ModelHandle> {
+        let m = agent.model.as_ref().ok_or_else(|| CoreError::invalid(format!("{} has no model yet", agent.name)))?;
+        let (_, provider) = self.provider(&m.provider_id)?;
+        Ok((provider, ChatRequest { model: m.model_id.clone(), effort: m.effort.clone(), want_reasoning, ..Default::default() }))
+    }
+
+    /// The utility model (cheap internal tasks), falling back to Roger's model.
+    fn utility_handle(&self, roger: &Agent) -> Option<ModelHandle> {
+        if let Some(m) = settings::get_model(&self.db, keys::UTILITY_MODEL)
+            && let Ok((_, p)) = self.provider(&m.provider_id)
+        {
+            return Some((p, ChatRequest { model: m.model_id, effort: m.effort, ..Default::default() }));
+        }
+        self.model_handle(roger, false).ok()
+    }
+
+    async fn select_preferences(&self, roger: &Agent, query: &str) -> Vec<String> {
+        let text = settings::get_string(&self.db, keys::CUSTOM_INSTRUCTIONS);
+        if text.trim().is_empty() {
+            return vec![];
+        }
+        let utility = if text.len() >= crate::preferences::SEND_ALL_BELOW { self.utility_handle(roger) } else { None };
+        crate::preferences::select(utility.as_ref().map(|(p, r)| (p.as_ref(), r.clone())), &text, query).await
+    }
+
+    fn author_name(&self, agents: &[Agent], m: &Message) -> String {
+        match &m.agent_id {
+            None => "User".into(),
+            Some(id) => agents.iter().find(|a| &a.id == id).map(|a| a.name.clone()).unwrap_or_else(|| "Agent".into()),
+        }
+    }
+
+    fn recent_context(&self, turn: &Turn, n: usize) -> String {
+        let msgs = self.db.list_messages(&turn.chat.id, n + 2).unwrap_or_default();
+        let kept: Vec<&Message> =
+            msgs.iter().filter(|m| m.kind != MessageKind::Ack && m.kind != MessageKind::Notice && m.id != turn.user_msg.id).collect();
+        kept[kept.len().saturating_sub(n)..]
+            .iter()
+            .map(|m| format!("{}: {}", self.author_name(&turn.all_agents, m), truncate(&m.content.replace('\n', " "), 400)))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Chat history as seen by `agent`: its own turns are assistant turns; everyone else is quoted.
+    fn history_for(&self, turn: &Turn, agent: &Agent, exclude: &str, vision: bool) -> Result<Vec<ChatMessage>> {
+        let limit = settings::get_int(&self.db, keys::HISTORY_MESSAGES).max(4) as usize;
+        let msgs = self.db.list_messages(&turn.chat.id, limit)?;
+        let user_ids: Vec<&str> = msgs.iter().filter(|m| m.agent_id.is_none()).map(|m| m.id.as_str()).collect();
+        let recent_users: Vec<&str> = user_ids.iter().rev().take(3).copied().collect();
+        let mut out: Vec<ChatMessage> = Vec::new();
+        for m in &msgs {
+            if m.id == exclude || matches!(m.kind, MessageKind::Ack | MessageKind::Notice) {
+                continue;
+            }
+            if m.content.trim().is_empty() && m.attachments.is_empty() {
+                continue;
+            }
+            let cm = match &m.agent_id {
+                Some(id) if id == &agent.id => {
+                    let mut text = m.content.clone();
+                    for a in &m.attachments {
+                        text.push_str(&format!("\n[generated image: {}]", a.name));
+                    }
+                    ChatMessage::assistant(text)
+                }
+                None => {
+                    let mut parts = vec![Part::Text(m.content.clone())];
+                    let send_files = recent_users.contains(&m.id.as_str());
+                    for a in &m.attachments {
+                        if send_files {
+                            parts.extend(attachments::to_parts(a, vision));
+                        } else {
+                            parts.push(Part::Text(format!("[earlier attachment: {}]", a.name)));
+                        }
+                    }
+                    ChatMessage { role: Role::User, parts, tool_calls: vec![], tool_call_id: None, tool_name: None, raw: None }
+                }
+                Some(_) => ChatMessage::user(format!("[{}]: {}", self.author_name(&turn.all_agents, m), m.content)),
+            };
+            out.push(cm);
+        }
+        if out.first().is_some_and(|m| m.role != Role::User) {
+            out.insert(0, ChatMessage::user("(earlier conversation)"));
+        }
+        Ok(out)
+    }
+
+    // ---------------------------------------------------------------- agent run
+
+    async fn run_agent(self: &Arc<Self>, turn: &Turn, agent: &Agent, task: AgentTask) -> Result<Message> {
+        let kind = if task.plan { MessageKind::Plan } else { MessageKind::Text };
+        let mut msg = self.new_message(&turn.chat.id, Some(&agent.id), kind, MessageStatus::Streaming, "");
+        let show_brief = settings::get_bool(&self.db, keys::SHOW_BRIEFS);
+        msg.meta = json!({ "routing": if show_brief { task.routing.clone() } else { json!({ "mode": task.mode.as_str() }) }, "tools": [] });
+        if task.plan {
+            msg.meta["plan"] = json!({ "approved": false });
+        }
+        self.insert_message(&msg)?;
+        self.activity(&turn.chat.id, &agent.id, AgentActivity::Thinking, None);
+
+        let started = Instant::now();
+        let mut stats = RunStats::default();
+        let result = self.run_agent_inner(turn, agent, &task, &mut msg, &mut stats).await;
+        msg.working_ms = Some(started.elapsed().as_millis() as i64);
+        msg.thinking_ms = stats.thinking_ms(started);
+        match &result {
+            Ok(()) => msg.status = MessageStatus::Done,
+            Err(CoreError::Cancelled) => {
+                msg.status = MessageStatus::Cancelled;
+                if msg.content.is_empty() {
+                    msg.content = "_Stopped._".into();
+                }
+            }
+            Err(e) => {
+                msg.status = MessageStatus::Error;
+                msg.error = Some(e.to_string());
+                if matches!(e, CoreError::Invalid(s) if s.contains("has no model yet")) {
+                    msg.meta["needsSetup"] = json!(true);
+                    msg.error = Some(format!("I'm not set up yet. Choose a provider and model for me in Settings → Agents → {}.", agent.name));
+                }
+            }
+        }
+        if msg.status == MessageStatus::Done && msg.content.trim().is_empty() && msg.attachments.is_empty() {
+            msg.content = "_(no response)_".into();
+        }
+        let (tin, tout) = stats.tokens(&msg);
+        msg.tokens_in = Some(tin);
+        msg.tokens_out = Some(tout);
+        self.save_message(&msg)?;
+        self.activity(&turn.chat.id, &agent.id, AgentActivity::Idle, None);
+        if stats.requests > 0 {
+            self.db.record_usage(&agent.id, tin, tout, msg.thinking_ms.unwrap_or(0), msg.working_ms.unwrap_or(0))?;
+            self.emit(CoreEvent::UsageUpdated { usage: self.db.usage_for(&agent.id)? });
+        }
+        match result {
+            Err(CoreError::Cancelled) => Err(CoreError::Cancelled),
+            _ => Ok(msg),
+        }
+    }
+
+    async fn run_agent_inner(self: &Arc<Self>, turn: &Turn, agent: &Agent, task: &AgentTask, msg: &mut Message, stats: &mut RunStats) -> Result<()> {
+        let model = agent.model.clone().ok_or_else(|| CoreError::invalid(format!("{} has no model yet", agent.name)))?;
+        let (cfg, provider) = self.provider(&model.provider_id)?;
+        let workspace = turn.chat.workspace_path.clone().filter(|p| std::path::Path::new(p).is_dir());
+        let level = self.db.grant(&turn.chat.id, &agent.id)?.level;
+        let is_image_agent = agent.specialty == "image" && agent.image_model.is_some();
+
+        let mut tool_specs = if model.tools { tools::specs(workspace.is_some(), level) } else { vec![] };
+        if is_image_agent && model.tools {
+            tool_specs.push(tools::image_tool());
+        }
+        let system = prompts::agent_system(&prompts::AgentPromptInput {
+            agent,
+            chat: &turn.chat,
+            members: &turn.members,
+            mode: task.mode,
+            permission: level,
+            has_image_tool: is_image_agent,
+            preferences: &turn.prefs,
+        });
+        let mut messages = self.history_for(turn, agent, &msg.id, model.vision)?;
+        if let Some(b) = &task.brief {
+            messages.push(ChatMessage::user(b.clone()));
+        }
+        let mut req = ChatRequest {
+            model: model.model_id.clone(),
+            system,
+            messages,
+            tools: tool_specs,
+            effort: model.effort.clone(),
+            max_tokens: None,
+            json_mode: false,
+            want_reasoning: true,
+        };
+        stats.input_chars = req.system.len() + req.messages.iter().map(|m| m.text_content().len()).sum::<usize>();
+
+        let _permit = tokio::select! {
+            p = self.providers.semaphore(&cfg).acquire_owned() => p.map_err(|_| CoreError::Cancelled)?,
+            _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
+        };
+        let stall = Duration::from_secs(settings::get_int(&self.db, keys::STALL_SECONDS).max(15) as u64);
+        let roger = self.agent_by_slug("roger")?;
+        let mut stalled_once = false;
+        let mut last_sig: Option<(String, usize)> = None;
+        let mut generated_image = false;
+
+        for _step in 0..MAX_TOOL_STEPS {
+            stats.requests += 1;
+            let mut stream = tokio::select! {
+                s = provider.stream_chat(req.clone()) => s?,
+                _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
+            };
+            let mut calls: Vec<ToolCall> = Vec::new();
+            let mut raw = None;
+            let mut step_text = String::new();
+            let mut pending = (String::new(), String::new());
+            let mut last_flush = Instant::now();
+            let mut last_event = Instant::now();
+            let mut stalled = false;
+            let mut first_text_in_step = true;
+
+            loop {
+                let wait = if pending.0.is_empty() && pending.1.is_empty() { Duration::from_secs(2) } else { FLUSH_EVERY };
+                let next = tokio::select! {
+                    n = tokio::time::timeout(wait, stream.next()) => n,
+                    _ = turn.token.cancelled() => {
+                        self.flush(msg, &mut pending);
+                        return Err(CoreError::Cancelled);
+                    }
+                };
+                let ev = match next {
+                    Err(_) => {
+                        self.flush(msg, &mut pending);
+                        last_flush = Instant::now();
+                        if last_event.elapsed() >= stall {
+                            stalled = true;
+                            break;
+                        }
+                        continue;
+                    }
+                    Ok(None) => break,
+                    Ok(Some(ev)) => ev,
+                };
+                last_event = Instant::now();
+                match ev {
+                    ProviderEvent::ReasoningDelta(t) => {
+                        stats.reasoning_started.get_or_insert_with(Instant::now);
+                        if stats.text_started.is_none() {
+                            self.activity(&turn.chat.id, &agent.id, AgentActivity::Thinking, None);
+                        }
+                        msg.reasoning.get_or_insert_with(String::new).push_str(&t);
+                        pending.1.push_str(&t);
+                    }
+                    ProviderEvent::TextDelta(t) => {
+                        if stats.text_started.is_none() {
+                            stats.text_started = Some(Instant::now());
+                            self.activity(&turn.chat.id, &agent.id, AgentActivity::Writing, None);
+                        }
+                        let mut t = t;
+                        if first_text_in_step && !msg.content.is_empty() && !msg.content.ends_with("\n\n") {
+                            t = format!("\n\n{}", t.trim_start());
+                        }
+                        first_text_in_step = false;
+                        step_text.push_str(&t);
+                        msg.content.push_str(&t);
+                        pending.0.push_str(&t);
+                    }
+                    ProviderEvent::ToolCall(c) => calls.push(c),
+                    ProviderEvent::Usage(u) => {
+                        stats.tokens_in += u.input_tokens;
+                        stats.tokens_out += u.output_tokens;
+                    }
+                    ProviderEvent::Done { raw_assistant, .. } => raw = raw_assistant,
+                    ProviderEvent::Error(e) => {
+                        self.flush(msg, &mut pending);
+                        return Err(CoreError::Provider(e));
+                    }
+                }
+                if last_flush.elapsed() >= FLUSH_EVERY {
+                    self.flush(msg, &mut pending);
+                    last_flush = Instant::now();
+                }
+            }
+            self.flush(msg, &mut pending);
+
+            if stalled {
+                // Roger checks on a silent agent once; a second stall ends the run.
+                self.activity(&turn.chat.id, &agent.id, AgentActivity::Stuck, None);
+                if stalled_once {
+                    return Err(CoreError::provider(format!("{} stopped responding", agent.name)));
+                }
+                stalled_once = true;
+                self.post(&turn.chat.id, &roger.id, MessageKind::Notice,
+                    &format!("{} has been quiet for {}s. I'm checking in on them.", agent.name, stall.as_secs()), json!({ "notice": "stuck" }))?;
+                let mut partial = ChatMessage::assistant(step_text.clone());
+                partial.raw = None;
+                if !step_text.trim().is_empty() {
+                    req.messages.push(partial);
+                }
+                req.messages.push(ChatMessage::user(format!(
+                    "[{} (moderator)]: You have been silent for a while. Briefly tell the user what is going on, then continue or wrap up.",
+                    roger.name
+                )));
+                continue;
+            }
+
+            if calls.is_empty() {
+                break;
+            }
+
+            // Tool turn: replay the native assistant turn, then the results.
+            self.activity(&turn.chat.id, &agent.id, AgentActivity::UsingTool, Some(tools::summarize(&calls[0].name, &calls[0].arguments)));
+            req.messages.push(ChatMessage { role: Role::Assistant, parts: vec![Part::Text(step_text.clone())], tool_calls: calls.clone(), tool_call_id: None, tool_name: None, raw });
+            for call in &calls {
+                let sig = format!("{}:{}", call.name, call.arguments);
+                let repeats = match &last_sig { Some((s, n)) if *s == sig => n + 1, _ => 1 };
+                last_sig = Some((sig, repeats));
+                if repeats >= 3 {
+                    self.post(&turn.chat.id, &roger.id, MessageKind::Notice,
+                        &format!("{} seems to be stuck repeating “{}”. I stopped them; try rephrasing or giving more detail.", agent.name, tools::summarize(&call.name, &call.arguments)),
+                        json!({ "notice": "loop" }))?;
+                    return Ok(());
+                }
+                let level = self.db.grant(&turn.chat.id, &agent.id)?.level;
+                let summary = tools::summarize(&call.name, &call.arguments);
+                let result = if call.name == "generate_image" {
+                    generated_image = true;
+                    self.generate_image(agent, msg, call.arguments["prompt"].as_str().unwrap_or_default()).await
+                } else if let Some(ws) = &workspace {
+                    tokio::select! {
+                        r = tools::execute(std::path::Path::new(ws), level, &call.name, &call.arguments) => r,
+                        _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
+                    }
+                } else {
+                    Err(CoreError::invalid("this chat has no workspace folder"))
+                };
+                let allowed = !matches!(result, Err(CoreError::Permission(_)));
+                let entry = self.db.log_action(&turn.chat.id, &agent.id, &call.name, &summary, allowed, &truncate(&call.arguments.to_string(), 2000))?;
+                self.emit(CoreEvent::ActionLogged { entry });
+                let (ok, output) = match result {
+                    Ok(s) => (true, s),
+                    Err(e) => (false, format!("Error: {e}")),
+                };
+                if let Some(list) = msg.meta["tools"].as_array_mut() {
+                    list.push(json!({ "name": call.name, "summary": summary, "ok": ok, "allowed": allowed, "error": (!ok).then(|| truncate(&output, 300)) }));
+                }
+                self.save_message(msg)?;
+                req.messages.push(ChatMessage::tool_result(call, output));
+            }
+        }
+
+        // Image agent without tool support: render the <image_prompt> she wrote.
+        if agent.specialty == "image" && !generated_image && agent.image_model.is_some()
+            && let Some((start, end)) = msg.content.find("<image_prompt>").zip(msg.content.find("</image_prompt>"))
+            && end > start
+        {
+            let prompt = msg.content[start + 14..end].trim().to_string();
+            msg.content = format!("{}{}", &msg.content[..start], &msg.content[end + 15..]).trim().to_string();
+            self.save_message(msg)?;
+            if let Err(e) = self.generate_image(agent, msg, &prompt).await {
+                msg.content.push_str(&format!("\n\n_Image generation failed: {e}_"));
+            }
+        }
+        Ok(())
+    }
+
+    fn flush(&self, msg: &Message, pending: &mut (String, String)) {
+        if pending.0.is_empty() && pending.1.is_empty() {
+            return;
+        }
+        let text = std::mem::take(&mut pending.0);
+        let reasoning = std::mem::take(&mut pending.1);
+        self.emit(CoreEvent::MessageDelta {
+            chat_id: msg.chat_id.clone(),
+            message_id: msg.id.clone(),
+            text: (!text.is_empty()).then_some(text),
+            reasoning: (!reasoning.is_empty()).then_some(reasoning),
+        });
+    }
+
+    async fn generate_image(&self, agent: &Agent, msg: &mut Message, prompt: &str) -> Result<String> {
+        let m = agent.image_model.clone().ok_or_else(|| CoreError::invalid("no image model configured for this agent"))?;
+        if prompt.trim().is_empty() {
+            return Err(CoreError::invalid("the image prompt is empty"));
+        }
+        let cfg = self.db.get_provider(&m.provider_id)?;
+        let key = self.provider_key(&cfg.id)?;
+        let img = image::generate(&cfg, key, &m.model_id, prompt).await?;
+        let ext = match img.mime.as_str() {
+            "image/jpeg" => "jpg",
+            "image/webp" => "webp",
+            _ => "png",
+        };
+        let a = self.stage_attachment(&format!("{}-{}.{ext}", agent.name.to_lowercase(), chrono::Local::now().format("%Y%m%d-%H%M%S")), &img.mime, &img.bytes)?;
+        self.db.link_attachment(&a.id, &msg.id, &msg.chat_id)?;
+        msg.attachments.push(a);
+        msg.meta["imagePrompt"] = json!(prompt);
+        self.save_message(msg)?;
+        Ok(match img.caption {
+            Some(c) => format!("Image generated and shown to the user. The image model said: {c}"),
+            None => "Image generated and shown to the user.".into(),
+        })
+    }
+}
+
+#[derive(Default)]
+struct RunStats {
+    reasoning_started: Option<Instant>,
+    text_started: Option<Instant>,
+    tokens_in: i64,
+    tokens_out: i64,
+    requests: u32,
+    input_chars: usize,
+}
+
+impl RunStats {
+    /// Thinking time: first reasoning event → first answer text (or → end if no text).
+    fn thinking_ms(&self, started: Instant) -> Option<i64> {
+        let r = self.reasoning_started?;
+        let end = self.text_started.unwrap_or_else(Instant::now);
+        let _ = started;
+        Some(end.saturating_duration_since(r).as_millis() as i64)
+    }
+
+    /// Provider-reported usage, or a ~4 chars/token estimate when the provider reports none.
+    fn tokens(&self, msg: &Message) -> (i64, i64) {
+        let est_out = ((msg.content.len() + msg.reasoning.as_ref().map_or(0, |r| r.len())) / 4) as i64;
+        let tin = if self.tokens_in > 0 { self.tokens_in } else if self.requests > 0 { (self.input_chars / 4) as i64 } else { 0 };
+        let tout = if self.tokens_out > 0 { self.tokens_out } else if self.requests > 0 { est_out } else { 0 };
+        (tin, tout)
+    }
+}

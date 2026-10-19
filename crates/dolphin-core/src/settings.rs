@@ -308,6 +308,7 @@ pub fn all_global(db: &Db) -> Result<serde_json::Map<String, Value>> {
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(tag = "type", rename_all = "camelCase")]
 #[ts(export)]
+#[allow(clippy::large_enum_variant)]
 pub enum SettingChange {
     Global { key: String, value: Value },
     Chat { chat: Chat },

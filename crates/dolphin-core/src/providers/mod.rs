@@ -210,9 +210,12 @@ pub(crate) fn trim_base(url: &str) -> String {
 // ------------------------------------------------------------------ registry
 
 /// Builds adapters from configs and enforces a per-provider concurrency limit.
+type Versioned = (i64, Arc<dyn Provider>);
+
 pub struct ProviderRegistry {
-    cache: Mutex<HashMap<String, (i64, Arc<dyn Provider>)>>,
+    cache: Mutex<HashMap<String, Versioned>>,
     limits: Mutex<HashMap<String, Arc<Semaphore>>>,
+    overrides: Mutex<HashMap<String, Arc<dyn Provider>>>,
 }
 
 impl Default for ProviderRegistry {
@@ -223,7 +226,7 @@ impl Default for ProviderRegistry {
 
 impl ProviderRegistry {
     pub fn new() -> Self {
-        Self { cache: Mutex::new(HashMap::new()), limits: Mutex::new(HashMap::new()) }
+        Self { cache: Mutex::new(HashMap::new()), limits: Mutex::new(HashMap::new()), overrides: Mutex::new(HashMap::new()) }
     }
 
     pub fn build(cfg: &ProviderConfig, api_key: Option<String>) -> Arc<dyn Provider> {
@@ -238,6 +241,9 @@ impl ProviderRegistry {
     }
 
     pub fn get(&self, cfg: &ProviderConfig, api_key: Option<String>) -> Arc<dyn Provider> {
+        if let Some(p) = self.overrides.lock().unwrap().get(&cfg.id) {
+            return p.clone();
+        }
         let mut cache = self.cache.lock().unwrap();
         if let Some((ver, p)) = cache.get(&cfg.id)
             && *ver == cfg.updated_at
@@ -247,6 +253,12 @@ impl ProviderRegistry {
         let p = Self::build(cfg, api_key);
         cache.insert(cfg.id.clone(), (cfg.updated_at, p.clone()));
         p
+    }
+
+    /// Substitute an adapter for a provider id (tests, demos).
+    #[doc(hidden)]
+    pub fn set_override(&self, provider_id: &str, provider: Arc<dyn Provider>) {
+        self.overrides.lock().unwrap().insert(provider_id.to_string(), provider);
     }
 
     pub fn invalidate(&self, provider_id: &str) {

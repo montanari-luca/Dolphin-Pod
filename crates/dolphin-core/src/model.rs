@@ -58,6 +58,15 @@ pub struct ModelRef {
     pub model_id: String,
     #[serde(default)]
     pub effort: Option<EffortValue>,
+    /// Capabilities copied from `ModelInfo` when the model was picked.
+    #[serde(default)]
+    pub vision: bool,
+    #[serde(default = "yes")]
+    pub tools: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
