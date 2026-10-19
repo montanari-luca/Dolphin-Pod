@@ -31,11 +31,12 @@ teaching) answer in shared chats. Every agent runs on the local or cloud reasoni
 ```
 apps/desktop/          Tauri v2 desktop app (React + Vite + Tailwind in src/, Rust shell in src-tauri/)
 apps/ios/              SwiftUI app (Phase 2); app icon set already generated
-apps/website/          Product site (Phase 3); favicons and social image already generated
+apps/website/          Product site (Phase 3: Astro + Tailwind + Motion); favicons and social image already generated
 crates/dolphin-core/   Rust core: storage, providers, routing, permissions, tools, scheduler, usage
 packages/shared/       TypeScript types generated from Rust (ts-rs), model catalog, design tokens
 packages/brand/        Logo sources and the icon generator
 docs/                  Documentation source
+implementation/        Build plans for the remaining phases (delete once every phase is done)
 ```
 
 ## Development
@@ -79,7 +80,9 @@ raw GitHub link is set.
 1. **Desktop** (this release).
 2. **Sync + iOS**: encrypted local-first sync (NeonDB by default, any Postgres URL), SwiftUI chat app,
    per-device model overrides, iPhone as a remote control (nearby fast path, cloud fallback).
-3. **Website**: docs, guides and downloads driven by the same update manifest.
+3. **Website** (Astro + Tailwind + Motion, pnpm): docs, guides and downloads driven by the same update manifest.
+
+Detailed plans for the remaining phases live in [`implementation/`](implementation/).
 
 ## Credits
 
