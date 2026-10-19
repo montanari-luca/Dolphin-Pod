@@ -51,7 +51,9 @@ in `apps/website/` (it joins Turborepo's `build` / `lint` / `typecheck` tasks au
 - [ ] **Docs**: an Astro content collection reading `../../docs/**/*.md` (getting started, agents, providers,
       routing, permissions) with a sidebar, previous/next links and an "Edit on GitHub" link.
 - [ ] **Guides**: `docs/guides/*.md` (Ollama, LM Studio, OpenRouter, sync setup, iPhone remote control).
-- [ ] **Download**: reads the update manifest (`UPDATE_MANIFEST_URL`, the same constant as the apps). Fetch it
+- [ ] **Download**: reads the update manifest
+      (`https://raw.githubusercontent.com/AstroDevCompany/MintFlow-Releases/refs/heads/main/dolphinpod.json`, the
+      same file as `UPDATE_MANIFEST_URL` in the apps). Platforms with an empty link show "Coming soon". Fetch it
       at build time for static links, and re-fetch on the client so a new release shows without a rebuild. Show
       the version, per-platform buttons (macOS, Windows, Linux, iOS) and system requirements.
 - [ ] **Footer on every page**: MintFlow Technologies (mintflow.dev, logo from `packages/brand/source/`), lead

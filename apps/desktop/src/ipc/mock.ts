@@ -155,7 +155,7 @@ export function mockBackend(): Backend {
 
   return {
     isTauri: false,
-    appInfo: async () => ({ version: "0.1.0", platform: "browser", dataDir: "(mock)", attachmentsDir: "(mock)", manifestUrl: "https://raw.githubusercontent.com/PLACEHOLDER/PLACEHOLDER/main/latest.json", manifestPlaceholder: true }),
+    appInfo: async () => ({ version: "0.1.0", platform: "browser", dataDir: "(mock)", attachmentsDir: "(mock)", manifestUrl: "https://raw.githubusercontent.com/AstroDevCompany/MintFlow-Releases/refs/heads/main/dolphinpod.json" }),
     subscribe: async (fn) => void listeners.push(fn),
     listAgents: async () => structuredClone(agents),
     async updateAgent(a) {
@@ -268,9 +268,7 @@ export function mockBackend(): Backend {
       return saved;
     },
     deleteAutomation: async (aid) => void automations.splice(automations.findIndex((a) => a.id === aid), 1),
-    checkUpdate: async () => {
-      throw "update checks are not configured yet (placeholder manifest URL)";
-    },
+    checkUpdate: async () => ({ current: "0.1.0", latest: "0.1.0", available: false, url: null }),
     pickFolder: async () => "/Users/you/Projects/demo",
     pickFiles: async () => [],
     openUrl: async (url) => void window.open(url, "_blank"),

@@ -5,8 +5,9 @@ use ts_rs::TS;
 
 use crate::error::{CoreError, Result};
 
-/// PLACEHOLDER: replace with the real raw GitHub URL of `latest.json` before release.
-pub const UPDATE_MANIFEST_URL: &str = "https://raw.githubusercontent.com/PLACEHOLDER/PLACEHOLDER/main/latest.json";
+/// Raw GitHub manifest shared by the desktop apps, the iOS app and the website.
+pub const UPDATE_MANIFEST_URL: &str =
+    "https://raw.githubusercontent.com/AstroDevCompany/MintFlow-Releases/refs/heads/main/dolphinpod.json";
 
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -59,9 +60,6 @@ pub fn evaluate(m: &Manifest, current: &str) -> Result<UpdateInfo> {
 }
 
 pub async fn check() -> Result<UpdateInfo> {
-    if UPDATE_MANIFEST_URL.contains("PLACEHOLDER") {
-        return Err(CoreError::invalid("update checks are not configured yet (placeholder manifest URL)"));
-    }
     let http = crate::providers::http_client();
     let m: Manifest = crate::providers::send_with_retry(http.get(UPDATE_MANIFEST_URL)).await?.json().await?;
     evaluate(&m, CURRENT_VERSION)
@@ -88,6 +86,14 @@ mod tests {
         m.windows.clear();
         m.linux.clear();
         assert!(!evaluate(&m, "0.1.0").unwrap().available, "no link for this platform");
+    }
+
+    /// Hits the network: `cargo test -p dolphin-core live_manifest -- --ignored`.
+    #[tokio::test]
+    #[ignore]
+    async fn live_manifest_is_reachable_and_valid() {
+        let info = check().await.expect("manifest reachable and parseable");
+        assert!(semver::Version::parse(&info.latest).is_ok());
     }
 
     #[test]

@@ -18,8 +18,8 @@ desktop action both when the devices are on the same network and when they are f
 
 Do these first; they are small and unblock testing.
 
-- [ ] Replace `UPDATE_MANIFEST_URL` in `crates/dolphin-core/src/update.rs` with the real raw GitHub URL (waiting on
-      the owner) and publish a `latest.json` (`latest`, `macos`, `windows`, `linux`, `ios`).
+- [x] `UPDATE_MANIFEST_URL` points at `AstroDevCompany/MintFlow-Releases/main/dolphinpod.json` (verified live by
+      `cargo test -p dolphin-core live_manifest -- --ignored`). Fill in the per-platform links with the first release.
 - [ ] Confine `run_command` to the workspace (macOS `sandbox-exec`, Linux `bwrap`, documented fallback on Windows).
       File tools are already confined by `permissions::resolve_in_workspace`. A proposal card for this exists.
 - [ ] Verify by eye: the native window (vibrancy, overlay title bar, traffic-light spacing) and the icon in Finder,

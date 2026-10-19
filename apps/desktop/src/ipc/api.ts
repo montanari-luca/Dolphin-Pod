@@ -25,7 +25,6 @@ export interface AppInfo {
   dataDir: string;
   attachmentsDir: string;
   manifestUrl: string;
-  manifestPlaceholder: boolean;
 }
 
 export type Settings = Record<string, unknown>;

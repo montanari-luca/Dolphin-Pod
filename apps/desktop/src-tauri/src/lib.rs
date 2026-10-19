@@ -24,7 +24,6 @@ struct AppInfo {
     data_dir: String,
     attachments_dir: String,
     manifest_url: &'static str,
-    manifest_placeholder: bool,
 }
 
 #[tauri::command]
@@ -35,7 +34,6 @@ fn app_info(core: State<CoreRef>) -> AppInfo {
         data_dir: core.data_dir().to_string_lossy().into_owned(),
         attachments_dir: core.attachments_dir().to_string_lossy().into_owned(),
         manifest_url: update::UPDATE_MANIFEST_URL,
-        manifest_placeholder: update::UPDATE_MANIFEST_URL.contains("PLACEHOLDER"),
     }
 }
 

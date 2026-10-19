@@ -67,9 +67,11 @@ Data lives in the OS app-data folder (`dolphin-pod.db`, SQLite). API keys are st
 
 ## Updates
 
-The app checks a JSON manifest (`latest`, plus a download link per platform). The URL is the constant
-`UPDATE_MANIFEST_URL` in `crates/dolphin-core/src/update.rs`, **currently a placeholder** until the real
-raw GitHub link is set.
+The apps check a JSON manifest (`latest`, plus a direct download link per platform) on launch and every six
+hours: [`dolphinpod.json`](https://raw.githubusercontent.com/AstroDevCompany/MintFlow-Releases/refs/heads/main/dolphinpod.json)
+in `AstroDevCompany/MintFlow-Releases`. The URL is the constant `UPDATE_MANIFEST_URL` in
+`crates/dolphin-core/src/update.rs`. For each release, bump `latest` and fill in the links; a platform with an
+empty link is never prompted.
 
 ```json
 { "latest": "0.1.0", "macos": "", "windows": "", "linux": "", "ios": "" }
