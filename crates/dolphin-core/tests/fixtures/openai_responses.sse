@@ -1,0 +1,21 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}
+
+event: response.reasoning_summary_part.added
+data: {"type":"response.reasoning_summary_part.added","summary_index":0}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","delta":"Considering options."}
+
+event: response.reasoning_summary_part.added
+data: {"type":"response.reasoning_summary_part.added","summary_index":1}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","delta":"Picking one."}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","item":{"type":"function_call","id":"fc_1","call_id":"call_9","name":"search","arguments":"{\"q\":\"rust\"}"}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[{"type":"reasoning","id":"rs_1","encrypted_content":"xyz","summary":[]},{"type":"function_call","id":"fc_1","call_id":"call_9","name":"search","arguments":"{\"q\":\"rust\"}"}],"usage":{"input_tokens":20,"output_tokens":64}}}
+

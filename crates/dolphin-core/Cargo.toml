@@ -1,0 +1,38 @@
+[package]
+name = "dolphin-core"
+description = "Dolphin Pod core: providers, routing, permissions, usage, settings and storage"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license-file.workspace = true
+
+[lib]
+name = "dolphin_core"
+
+[dependencies]
+async-stream = "0.3"
+async-trait = "0.1"
+base64 = "0.22"
+bytes = "1"
+chrono = { version = "0.4", features = ["serde"] }
+futures = "0.3"
+ignore = "0.4"
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+mime_guess = "2"
+pdf-extract = "0.9"
+rand = "0.9"
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls", "http2"] }
+rusqlite = { version = "0.37", features = ["bundled", "serde_json"] }
+semver = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+tracing = "0.1"
+ts-rs = { version = "11", features = ["serde-json-impl", "uuid-impl", "no-serde-warnings"] }
+uuid = { version = "1", features = ["v7", "serde"] }
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,5 @@
+{"model":"qwen3:4b","created_at":"2026-10-19T10:00:00Z","message":{"role":"assistant","content":"","thinking":"The user greets me."},"done":false}
+{"model":"qwen3:4b","created_at":"2026-10-19T10:00:00Z","message":{"role":"assistant","content":"","thinking":" Reply briefly."},"done":false}
+{"model":"qwen3:4b","created_at":"2026-10-19T10:00:00Z","message":{"role":"assistant","content":"Hello!"},"done":false}
+{"model":"qwen3:4b","created_at":"2026-10-19T10:00:00Z","message":{"role":"assistant","content":" How can I help?"},"done":false}
+{"model":"qwen3:4b","created_at":"2026-10-19T10:00:01Z","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop","prompt_eval_count":12,"eval_count":20}
