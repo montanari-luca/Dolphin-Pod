@@ -12,7 +12,7 @@ export function filterAgents(agents: Agent[], query: string): Agent[] {
   const q = query.toLowerCase();
   return agents
     .filter((a) => a.role !== "orchestrator")
-    .filter((a) => !q || a.name.toLowerCase().startsWith(q) || a.slug.startsWith(q) || a.specialty.includes(q))
+    .filter((a) => !q || a.name.toLowerCase().startsWith(q) || a.slug.startsWith(q) || a.specialty.startsWith(q))
     .slice(0, 8);
 }
 
