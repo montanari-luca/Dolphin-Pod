@@ -5,6 +5,7 @@ pub mod backend;
 pub mod engine;
 pub mod hlc;
 pub mod kinds;
+pub mod manager;
 pub mod postgres;
 pub mod store;
 

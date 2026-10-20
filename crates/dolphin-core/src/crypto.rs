@@ -259,6 +259,22 @@ pub fn change_passphrase(account: &Account, dk: &DataKey, new_passphrase: &str) 
     })
 }
 
+/// A fresh recovery key for an account whose data key is already unlocked (the old recovery key stops working).
+pub fn rotate_recovery_key(account: &Account, dk: &DataKey) -> Result<(Account, RecoveryKey)> {
+    let recovery = RecoveryKey(random());
+    let next = Account {
+        wrapped_by_recovery: wrap(&recovery_kek(&recovery.0), dk, RECOVERY_LABEL)?,
+        generation: account.generation + 1,
+        ..account.clone()
+    };
+    Ok((next, recovery))
+}
+
+/// AD for the sealed device description and any other per-device payload.
+pub fn device_aad(device_id: &str) -> Vec<u8> {
+    record_aad("device", device_id, "", device_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -290,6 +306,15 @@ mod tests {
         let sealed = dk.seal(&aad, b"hello").unwrap();
         let reopened = unlock_with_passphrase(&next, "new passphrase").unwrap();
         assert_eq!(reopened.open(&aad, &sealed).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn a_rotated_recovery_key_replaces_the_old_one() {
+        let (account, dk, old) = create_account("a passphrase", FAST).unwrap();
+        let (next, fresh) = rotate_recovery_key(&account, &dk).unwrap();
+        assert!(unlock_with_recovery(&next, &old).is_err());
+        assert_eq!(unlock_with_recovery(&next, &fresh).unwrap().to_base64(), dk.to_base64());
+        assert_eq!(unlock_with_passphrase(&next, "a passphrase").unwrap().to_base64(), dk.to_base64());
     }
 
     #[test]

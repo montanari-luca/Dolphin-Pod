@@ -5,6 +5,7 @@ use ts_rs::TS;
 
 use crate::model::{ActionLogEntry, Agent, Chat, Message, PermissionGrant, UsageStats, UserRole};
 use crate::settings::SettingChange;
+use crate::sync::manager::SyncStatus;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -47,5 +48,8 @@ pub enum CoreEvent {
     ActionLogged { entry: ActionLogEntry },
     ConfirmRequest { id: String, title: String, body: String },
     UpdateAvailable { version: String, url: String },
+    SyncStatusChanged { status: SyncStatus },
+    /// Records that other lists need to reload after a sync (providers and automations have no finer events).
+    SyncApplied { providers: bool, automations: bool },
     Toast { level: ToastLevel, text: String },
 }

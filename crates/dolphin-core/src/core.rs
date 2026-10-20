@@ -29,6 +29,7 @@ pub struct Core {
     /// Cancellation per chat: stopping a chat cancels every run in it.
     pub(crate) chat_tokens: Mutex<HashMap<String, CancellationToken>>,
     pending_confirms: Mutex<HashMap<String, oneshot::Sender<bool>>>,
+    pub(crate) sync: crate::sync::manager::SyncRuntime,
 }
 
 pub type CoreRef = Arc<Core>;
@@ -54,7 +55,13 @@ impl Core {
             data_dir: data_dir.to_path_buf(),
             chat_tokens: Mutex::new(HashMap::new()),
             pending_confirms: Mutex::new(HashMap::new()),
+            sync: Default::default(),
         }))
+    }
+
+    #[doc(hidden)]
+    pub fn secrets_for_tests(&self) -> Arc<dyn SecretStore> {
+        self.secrets.clone()
     }
 
     pub fn data_dir(&self) -> &Path {

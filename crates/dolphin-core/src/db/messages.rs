@@ -240,6 +240,21 @@ impl Db {
         Ok(rows)
     }
 
+    /// The chat of a message even after it was cleaned away (for telling the UI what disappeared).
+    pub fn message_chat_id(&self, id: &str) -> Option<String> {
+        self.conn().query_row("SELECT chat_id FROM messages WHERE id = ?1", [id], |r| r.get(0)).optional().ok().flatten()
+    }
+
+    pub fn attachment_message_id(&self, id: &str) -> Option<String> {
+        self.conn().query_row("SELECT message_id FROM attachments WHERE id = ?1", [id], |r| r.get(0)).optional().ok().flatten().flatten()
+    }
+
+    /// Where a synced attachment's file landed on this device.
+    pub fn set_attachment_path(&self, id: &str, path: &str) -> Result<()> {
+        self.conn().execute("UPDATE attachments SET path = ?2 WHERE id = ?1", params![id, path])?;
+        Ok(())
+    }
+
     pub fn tombstone_attachment(&self, id: &str) -> Result<()> {
         self.conn()
             .execute("UPDATE attachments SET deleted = 1, updated_at = ?2 WHERE id = ?1", params![id, now_ms()])?;
