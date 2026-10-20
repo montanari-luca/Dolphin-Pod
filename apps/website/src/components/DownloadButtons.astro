@@ -1,0 +1,30 @@
+---
+import { loadManifest } from "../lib/manifest";
+import { PLATFORMS } from "../lib/site";
+
+const manifest = await loadManifest();
+---
+
+<ul class="grid gap-4 sm:grid-cols-2" data-stagger>
+  {
+    PLATFORMS.map((p) => {
+      const link = manifest[p.id];
+      return (
+        <li class="glass rounded-lg p-5" data-stagger-item>
+          <h3 class="text-lg font-semibold">{p.label}</h3>
+          <p class="mb-4 mt-1 min-h-12 text-sm text-muted">{p.req}</p>
+          <a
+            class="btn btn-primary w-full"
+            data-dl-platform={p.id}
+            data-available={link ? "true" : "false"}
+            href={link || undefined}
+            aria-disabled={link ? undefined : "true"}
+            rel="noopener"
+          >
+            <span data-dl-label>{link ? `Download for ${p.label}` : `${p.label}: coming soon`}</span>
+          </a>
+        </li>
+      );
+    })
+  }
+</ul>

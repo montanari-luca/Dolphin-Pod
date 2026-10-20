@@ -1,0 +1,17 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="Page not found" description="This page does not exist.">
+  <section class="container-page grid min-h-[60vh] place-items-center py-20 text-center">
+    <div class="glass-float max-w-lg rounded-xl px-8 py-12" data-reveal>
+      <p class="brand-text text-7xl font-bold">404</p>
+      <h1 class="mt-3 text-2xl font-bold">This page swam off.</h1>
+      <p class="mt-2 text-muted">Roger looked everywhere and could not find it.</p>
+      <div class="mt-6 flex flex-wrap justify-center gap-3">
+        <a class="btn btn-primary" href="/">Back home</a>
+        <a class="btn" href="/docs/getting-started/">Read the docs</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

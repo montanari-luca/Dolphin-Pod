@@ -1,0 +1,311 @@
+@import "tailwindcss";
+@import "@dolphin/shared/tokens.css";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Same token mapping as apps/desktop/src/index.css, so site and app share one look. */
+@theme inline {
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --color-base: var(--bg-base);
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-solid: var(--surface-solid);
+  --color-hover: var(--surface-hover);
+  --color-active: var(--surface-active);
+  --color-input: var(--surface-input);
+  --color-float: var(--surface-float);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-fg: var(--text);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-code: var(--code-bg);
+  --color-link: var(--accent-text);
+  --radius-xs: var(--radius-xs);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+}
+
+/* Site-only contrast adjustments: the app's accent and brand gradient are tuned for glass over vibrancy,
+   but text on the light page background needs a darker value to pass WCAG AA. */
+:root {
+  --accent-text: var(--accent);
+  --brand-text-gradient: var(--brand-gradient);
+  --btn-gradient: linear-gradient(135deg, #1f6fc4 0%, #8453c4 52%, #c4503f 100%);
+}
+:root[data-theme="light"] {
+  --accent-text: #1f5fb8;
+  --brand-text-gradient: linear-gradient(135deg, #1f6fc4 0%, #8453c4 52%, #c4503f 100%);
+}
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"] {
+    --accent-text: #1f5fb8;
+    --brand-text-gradient: linear-gradient(135deg, #1f6fc4 0%, #8453c4 52%, #c4503f 100%);
+  }
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 5rem;
+    background: var(--bg-base);
+  }
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--text);
+    background:
+      radial-gradient(60rem 38rem at 12% -8%, var(--bg-glow-1), transparent 70%),
+      radial-gradient(50rem 34rem at 92% 4%, var(--bg-glow-2), transparent 70%),
+      radial-gradient(56rem 36rem at 50% 108%, var(--bg-glow-3), transparent 70%),
+      var(--bg-base);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: var(--accent-soft);
+  }
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 3px;
+    border-radius: var(--radius-xs);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+}
+
+@layer components {
+  .glass {
+    background: var(--surface-1);
+    backdrop-filter: blur(var(--blur-panel)) saturate(160%);
+    -webkit-backdrop-filter: blur(var(--blur-panel)) saturate(160%);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-panel);
+  }
+  .glass-float {
+    background: var(--surface-float);
+    backdrop-filter: blur(var(--blur-float)) saturate(170%);
+    -webkit-backdrop-filter: blur(var(--blur-float)) saturate(170%);
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--shadow-float);
+  }
+  .brand-text {
+    background: var(--brand-text-gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .transition-ui {
+    transition-property: background-color, border-color, color, opacity, transform, box-shadow;
+    transition-duration: var(--dur-base);
+    transition-timing-function: var(--ease-out);
+  }
+  .container-page {
+    width: 100%;
+    max-width: 72rem;
+    margin-inline: auto;
+    padding-inline: 1.25rem;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+    padding: 0 1.25rem;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    font-size: 0.95rem;
+    border: 1px solid var(--border-strong);
+    background: var(--surface-2);
+    color: var(--text);
+    transition-property: background-color, border-color, transform, box-shadow, opacity;
+    transition-duration: var(--dur-base);
+    transition-timing-function: var(--ease-out);
+  }
+  .btn:hover {
+    background: var(--surface-active);
+  }
+  .btn-primary {
+    border-color: transparent;
+    color: #fff;
+    background: var(--btn-gradient);
+    box-shadow: 0 8px 28px -10px rgba(167, 123, 219, 0.7);
+  }
+  .btn-primary:hover {
+    background: var(--btn-gradient);
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+  }
+  .btn[aria-disabled="true"] {
+    opacity: 0.6;
+    pointer-events: none;
+  }
+  .eyebrow {
+    font-size: 0.78rem;
+    font-weight: 650;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent-text);
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.25rem 0.7rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+}
+
+/* Scroll-reveal start state. Only applied once JS has marked the page, so content stays visible without it. */
+@media (prefers-reduced-motion: no-preference) {
+  html.js [data-reveal] {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+}
+
+/* ---------------------------------------------------------------- prose (docs, guides) */
+.prose-doc {
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.prose-doc > :first-child {
+  margin-top: 0;
+}
+.prose-doc h1 {
+  font-size: 2.1rem;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 1rem;
+}
+.prose-doc h2 {
+  font-size: 1.45rem;
+  font-weight: 650;
+  margin: 2.2rem 0 0.6rem;
+  letter-spacing: -0.01em;
+}
+.prose-doc h3 {
+  font-size: 1.15rem;
+  font-weight: 650;
+  margin: 1.6rem 0 0.4rem;
+}
+.prose-doc p,
+.prose-doc ul,
+.prose-doc ol,
+.prose-doc blockquote,
+.prose-doc table,
+.prose-doc pre {
+  margin: 0.9rem 0;
+}
+.prose-doc ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+}
+.prose-doc ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+}
+.prose-doc li + li {
+  margin-top: 0.3rem;
+}
+.prose-doc li > ul,
+.prose-doc li > ol,
+.prose-doc li > pre {
+  margin: 0.4rem 0;
+}
+.prose-doc a {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, var(--accent-text) 40%, transparent);
+}
+.prose-doc a:hover {
+  text-decoration-color: currentColor;
+}
+.prose-doc strong {
+  font-weight: 650;
+}
+.prose-doc blockquote {
+  border-left: 3px solid var(--border-strong);
+  padding-left: 1rem;
+  color: var(--text-muted);
+}
+.prose-doc hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 2rem 0;
+}
+.prose-doc :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.1em 0.38em;
+}
+.prose-doc pre {
+  font-family: var(--font-mono);
+  font-size: 0.86rem;
+  line-height: 1.6;
+  padding: 1rem 1.15rem;
+  overflow-x: auto;
+  background: var(--code-bg) !important;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.prose-doc table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  max-width: 100%;
+  font-size: 0.95rem;
+}
+.prose-doc th,
+.prose-doc td {
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.85rem;
+  text-align: left;
+  vertical-align: top;
+}
+.prose-doc th {
+  background: var(--surface-hover);
+  font-weight: 600;
+}
+
+/* Shiki dual themes, switched by the same data-theme attribute as the tokens */
+.astro-code,
+.astro-code span {
+  color: var(--shiki-dark);
+}
+:root[data-theme="light"] .astro-code,
+:root[data-theme="light"] .astro-code span {
+  color: var(--shiki-light);
+}
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"] .astro-code,
+  :root[data-theme="system"] .astro-code span {
+    color: var(--shiki-light);
+  }
+}

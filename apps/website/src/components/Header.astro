@@ -1,0 +1,58 @@
+---
+import { Image } from "astro:assets";
+import logo from "../../../../packages/brand/source/dolphin.png";
+import { NAV, SITE } from "../lib/site";
+import ThemeToggle from "./ThemeToggle.astro";
+
+const path = Astro.url.pathname;
+const active = (n: (typeof NAV)[number]) => path.startsWith("match" in n && n.match ? n.match : n.href);
+---
+
+<header class="sticky top-0 z-50 border-b border-line glass" style="border-radius:0">
+  <div class="container-page flex h-16 items-center gap-4">
+    <a href="/" class="flex items-center gap-2.5 font-semibold tracking-tight" aria-label={`${SITE.name} home`}>
+      <Image src={logo} alt="" width={64} height={64} class="size-8" loading="eager" />
+      <span>{SITE.name}</span>
+    </a>
+
+    <nav aria-label="Main" class="ml-6 hidden items-center gap-1 md:flex">
+      {
+        NAV.map((n) => (
+          <a
+            href={n.href}
+            aria-current={active(n) ? "page" : undefined}
+            class:list={[
+              "transition-ui rounded-md px-3 py-1.5 text-sm hover:bg-hover hover:text-fg",
+              active(n) ? "bg-active text-fg" : "text-muted",
+            ]}
+          >
+            {n.label}
+          </a>
+        ))
+      }
+    </nav>
+
+    <div class="ml-auto flex items-center gap-2">
+      <ThemeToggle />
+      <details class="relative md:hidden">
+        <summary
+          class="transition-ui grid size-10 cursor-pointer list-none place-items-center rounded-md border border-line hover:bg-hover [&::-webkit-details-marker]:hidden"
+          aria-label="Menu"
+        >
+          <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h16"></path>
+          </svg>
+        </summary>
+        <nav aria-label="Mobile" class="glass-float absolute right-0 top-12 flex w-56 flex-col gap-1 rounded-lg p-2">
+          {
+            NAV.map((n) => (
+              <a href={n.href} class="rounded-md px-3 py-2 text-sm text-fg hover:bg-hover" aria-current={active(n) ? "page" : undefined}>
+                {n.label}
+              </a>
+            ))
+          }
+        </nav>
+      </details>
+    </div>
+  </div>
+</header>

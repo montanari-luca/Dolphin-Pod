@@ -1,0 +1,39 @@
+---
+import { Image } from "astro:assets";
+import mintflow from "../../../../packages/brand/source/mintflow-logo.webp";
+import { CREDITS, NAV, SITE } from "../lib/site";
+---
+
+<footer class="mt-24 border-t border-line">
+  <div class="container-page grid gap-10 py-12 md:grid-cols-[1.4fr_1fr_1fr]">
+    <div class="space-y-4">
+      <a href={CREDITS.companyUrl} class="inline-block" rel="noopener" aria-label={CREDITS.company}>
+        <Image src={mintflow} alt={CREDITS.company} height={64} class="h-8 w-auto" loading="lazy" />
+      </a>
+      <p class="max-w-sm text-sm text-muted">
+        {SITE.name} is built by <a class="text-fg underline underline-offset-2" href={CREDITS.companyUrl} rel="noopener">{CREDITS.company}</a>.
+        Lead developer: <a class="text-fg underline underline-offset-2" href={CREDITS.leadUrl} rel="noopener">{CREDITS.lead}</a>
+        ({CREDITS.leadHandle}).
+      </p>
+    </div>
+    <nav aria-label="Footer" class="text-sm">
+      <h2 class="mb-3 font-semibold">Explore</h2>
+      <ul class="space-y-2 text-muted">
+        {NAV.map((n) => <li><a class="hover:text-fg" href={n.href}>{n.label}</a></li>)}
+      </ul>
+    </nav>
+    <nav aria-label="Project" class="text-sm">
+      <h2 class="mb-3 font-semibold">Project</h2>
+      <ul class="space-y-2 text-muted">
+        <li><a class="hover:text-fg" href={SITE.repo} rel="noopener">Source repository</a></li>
+        <li><a class="hover:text-fg" href={CREDITS.companyUrl} rel="noopener">mintflow.dev</a></li>
+        <li><a class="hover:text-fg" href={CREDITS.leadUrl} rel="noopener">Instagram</a></li>
+      </ul>
+    </nav>
+  </div>
+  <div class="border-t border-line">
+    <p class="container-page py-5 text-xs text-muted">
+      © {CREDITS.year} {CREDITS.company}. {CREDITS.license}
+    </p>
+  </div>
+</footer>

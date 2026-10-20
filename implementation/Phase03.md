@@ -8,6 +8,14 @@ screenshots, documentation, guides, downloads and credits.
 **Stack:** **Astro + Tailwind CSS + Motion**, managed with **pnpm** as the `@dolphin/website` workspace package
 in `apps/website/` (it joins Turborepo's `build` / `lint` / `typecheck` tasks automatically).
 
+**Status:** built and committed. Carry-overs before launch (everything else below is ticked):
+- Capture real 2x screenshots into `apps/website/src/assets/screenshots/` (see its README); until then the
+  Screenshots page shows the built-in illustration.
+- Run Lighthouse on the home and docs pages (not run yet: no Chrome available when this was built). Contrast
+  fixes for both themes and reduced motion are already in.
+- Features page: add iPhone/remote-control details and the sync and iPhone guides once Phase 2 ships.
+- Decide the open questions at the bottom (domain: set `SITE_URL` and `public/robots.txt`; license wording; analytics).
+
 **Exit criteria**
 - `pnpm --filter @dolphin/website build` produces a static site with no client JS on pages that don't need it.
 - Download buttons always match the update manifest (same versions and links as the apps).
@@ -18,55 +26,55 @@ in `apps/website/` (it joins Turborepo's `build` / `lint` / `typecheck` tasks au
 
 ## 1. Scaffold
 
-- [ ] `apps/website/package.json` (`@dolphin/website`, `type: module`) with `astro` (7.x), `tailwindcss` +
+- [x] `apps/website/package.json` (`@dolphin/website`, `type: module`) with `astro` (7.x), `tailwindcss` +
       `@tailwindcss/vite` (4.x), `motion` (14.x), `@astrojs/mdx`, `@astrojs/sitemap`; scripts `dev`, `build`,
       `preview`, `typecheck` (`astro check`).
-- [ ] `astro.config.mjs`: `output: "static"`, Tailwind through the Vite plugin, MDX, sitemap, `site` set once the
+- [x] `astro.config.mjs`: `output: "static"`, Tailwind through the Vite plugin, MDX, sitemap, `site` set once the
       domain is known.
-- [ ] Reuse the design tokens: `@import "@dolphin/shared/tokens.css"` in the global stylesheet and map them in
+- [x] Reuse the design tokens: `@import "@dolphin/shared/tokens.css"` in the global stylesheet and map them in
       `@theme inline` exactly like `apps/desktop/src/index.css` (same color, radius and glass utilities), so the
       site and the app look like one product. Fonts: `@fontsource-variable/inter` and `@fontsource/jetbrains-mono`.
-- [ ] `public/` already contains the favicons, apple-touch icon, PWA icons (incl. maskable) and `og-image.png`;
+- [x] `public/` already contains the favicons, apple-touch icon, PWA icons (incl. maskable) and `og-image.png`;
       add `site.webmanifest` and the `<head>` tags in a shared `BaseLayout.astro`.
-- [ ] Theme: system, dark and light with a toggle (inline script in `<head>` to avoid a flash, stored in
+- [x] Theme: system, dark and light with a toggle (inline script in `<head>` to avoid a flash, stored in
       `localStorage` with a try/catch).
 
 ## 2. Motion
 
-- [ ] Use the framework-agnostic `motion` API (`animate`, `inView`, `scroll`, `stagger`) in small `<script>`
+- [x] Use the framework-agnostic `motion` API (`animate`, `inView`, `scroll`, `stagger`) in small `<script>`
       blocks: section reveals, hero glass panels floating, a staggered agent roster. No React runtime needed.
-- [ ] If an interactive island ever needs React, add `@astrojs/react` and use `motion/react` there only.
-- [ ] Gate every animation on `prefers-reduced-motion` (and keep content visible without JS).
+- [x] If an interactive island ever needs React, add `@astrojs/react` and use `motion/react` there only.
+- [x] Gate every animation on `prefers-reduced-motion` (and keep content visible without JS).
 
 ## 3. Pages
 
-- [ ] **Home**: hero (logo, "Your pod of AI agents, in one chat", download CTA for the detected platform), a
+- [x] **Home**: hero (logo, "Your pod of AI agents, in one chat", download CTA for the detected platform), a
       product screenshot in a glass frame, how routing works (Roger → Lincoln → specialist, plus @mentions), the
       agent roster with their colors, provider logos (local and cloud), privacy points (local-first, keys in the
       keychain, encrypted sync).
-- [ ] **Features**: chats and agents, routing and modes, plans and permissions, streamed thinking, preferences
+- [x] **Features**: chats and agents, routing and modes, plans and permissions, streamed thinking, preferences
       efficiency, cleanup and automations, hover cards and usage, iPhone and remote control (once Phase 2 ships).
-- [ ] **Screenshots**: a gallery (dark and light). Capture from the real app at 2x and store them in
+- [ ] **Screenshots** (page + auto-picking gallery done; real captures still to add): a gallery (dark and light). Capture from the real app at 2x and store them in
       `src/assets/screenshots/` so Astro's `<Image>` optimizes them (AVIF/WebP).
-- [ ] **Docs**: an Astro content collection reading `../../docs/**/*.md` (getting started, agents, providers,
+- [x] **Docs**: an Astro content collection reading `../../docs/**/*.md` (getting started, agents, providers,
       routing, permissions) with a sidebar, previous/next links and an "Edit on GitHub" link.
-- [ ] **Guides**: `docs/guides/*.md` (Ollama, LM Studio, OpenRouter, sync setup, iPhone remote control).
-- [ ] **Download**: reads the update manifest
+- [x] **Guides**: `docs/guides/*.md` (Ollama, LM Studio, OpenRouter done; sync setup and iPhone remote control wait for Phase 2).
+- [x] **Download**: reads the update manifest
       (`https://raw.githubusercontent.com/AstroDevCompany/MintFlow-Releases/refs/heads/main/dolphinpod.json`, the
       same file as `UPDATE_MANIFEST_URL` in the apps). Platforms with an empty link show "Coming soon". Fetch it
       at build time for static links, and re-fetch on the client so a new release shows without a rebuild. Show
       the version, per-platform buttons (macOS, Windows, Linux, iOS) and system requirements.
-- [ ] **Footer on every page**: MintFlow Technologies (mintflow.dev, logo from `packages/brand/source/`), lead
+- [x] **Footer on every page**: MintFlow Technologies (mintflow.dev, logo from `packages/brand/source/`), lead
       developer Luca Montanari (instagram.com/montanarii.luca), © 2026 MintFlow Technologies, license note.
-- [ ] 404 page in the same style.
+- [x] 404 page in the same style.
 
 ## 4. Quality
 
-- [ ] SEO: titles and descriptions per page, Open Graph and Twitter tags with `og-image.png`, sitemap,
+- [x] SEO: titles and descriptions per page, Open Graph and Twitter tags with `og-image.png`, sitemap,
       `robots.txt`.
-- [ ] Accessibility: semantic landmarks, focus styles from the tokens, contrast checked in both themes, alt
+- [x] Accessibility: semantic landmarks, focus styles from the tokens, contrast checked in both themes, alt
       text on every screenshot.
-- [ ] CI: add the website build to `.github/workflows/ci.yml` (covered automatically by `pnpm build` through
+- [x] CI: add the website build to `.github/workflows/ci.yml` (covered automatically by `pnpm build` through
       Turborepo).
 
 ## Open questions

@@ -1,0 +1,118 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Section from "../components/Section.astro";
+import AppMock from "../components/AppMock.astro";
+import AgentRoster from "../components/AgentRoster.astro";
+import { PROVIDERS, SITE } from "../lib/site";
+import { Image } from "astro:assets";
+import logo from "../../../../packages/brand/source/dolphin.png";
+
+const steps = [
+  { n: "1", who: "Roger", title: "Acknowledges instantly", text: "No model call, no waiting. Roger confirms he has your message, then decides the intent and mode: answer, learn, quick, plan or implement." },
+  { n: "2", who: "Lincoln", title: "Briefs the specialist", text: "Lincoln turns Roger's decision into a precise brief, lightly or fully improving your prompt, and enforces what the agent may touch." },
+  { n: "3", who: "Specialist", title: "Answers in the chat", text: "Rick, Viktor, Jordan, Emma, Ducky, Sarah, Prof or Micheal replies in the shared chat with their thinking streamed live." },
+];
+const privacy = [
+  { title: "Local-first", text: "Chats, agents and settings live in a SQLite database on your machine. Run fully offline with Ollama or LM Studio." },
+  { title: "Keys in the keychain", text: "API keys go to the system keychain and are never written to the database or to a config file." },
+  { title: "Encrypted sync", text: "Phone and desktop will sync end to end encrypted, to a database you own. Coming with the iOS app." },
+  { title: "Permissions that are enforced", text: "Planning is read-only. Writes and commands only happen inside your workspace, after you approve, and are all logged." },
+];
+---
+
+<BaseLayout>
+  <section class="container-page grid items-center gap-12 pb-12 pt-14 md:pb-20 md:pt-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+    <div>
+      <p class="chip mb-5 whitespace-nowrap" data-reveal>
+        <Image src={logo} alt="" width={40} height={40} class="size-5" loading="eager" />
+        Version <span data-dl-version>0.1.0</span> · by MintFlow Technologies
+      </p>
+      <h1 class="text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl lg:text-6xl" data-reveal data-reveal-delay="0.05">
+        Your pod of <span class="brand-text">AI agents</span>, in one chat.
+      </h1>
+      <p class="mt-5 max-w-xl text-lg text-muted" data-reveal data-reveal-delay="0.1">
+        Dolphin Pod is a Discord-like home where the members are AI agents. Roger moderates, Lincoln orchestrates and a
+        team of specialists answer in shared chats, all on the local or cloud reasoning model you choose.
+      </p>
+      <div class="mt-8 flex flex-wrap gap-3" data-reveal data-reveal-delay="0.15">
+        <a class="btn btn-primary" href="/download/" data-dl-hero><span data-dl-label>Download</span></a>
+        <a class="btn" href="/docs/getting-started/">Read the docs</a>
+      </div>
+      <p class="mt-4 text-sm text-muted" data-reveal data-reveal-delay="0.2">macOS, Windows and Linux. iPhone app on the way.</p>
+    </div>
+    <div class="relative" data-reveal data-reveal-delay="0.1">
+      <div class="pointer-events-none absolute -right-4 -top-6 z-10 hidden sm:block" data-float="9" aria-hidden="true">
+        <div class="glass-float rounded-lg px-3.5 py-2 text-sm">
+          <span class="font-semibold" style="color:#2f8fe0">@Rick</span> <span class="text-muted">skips straight to coding</span>
+        </div>
+      </div>
+      <AppMock />
+      <div class="pointer-events-none absolute -bottom-6 -left-4 z-10 hidden sm:block" data-float="12" aria-hidden="true">
+        <div class="glass-float rounded-lg px-3.5 py-2 text-sm text-muted">Plan ready. <span class="font-semibold text-fg">Approve?</span></div>
+      </div>
+    </div>
+  </section>
+
+  <Section eyebrow="How routing works" title="Say it once. The right agent answers." lead="Every message goes through a short, visible pipeline, so you always know who is doing what.">
+    <ol class="grid gap-4 md:grid-cols-3" data-stagger>
+      {
+        steps.map((s) => (
+          <li class="glass rounded-lg p-6" data-stagger-item>
+            <p class="mb-3 flex items-center gap-2">
+              <span class="grid size-7 place-items-center rounded-full bg-accent-soft text-sm font-bold text-link">{s.n}</span>
+              <span class="text-sm font-semibold text-muted">{s.who}</span>
+            </p>
+            <h3 class="text-lg font-semibold">{s.title}</h3>
+            <p class="mt-2 text-sm text-muted">{s.text}</p>
+          </li>
+        ))
+      }
+    </ol>
+    <p class="glass mt-4 rounded-lg px-6 py-4 text-sm text-muted" data-reveal>
+      <strong class="text-fg">Shortcut:</strong> type <code class="rounded border border-line bg-hover px-1.5 py-0.5 font-mono text-[0.85em]">@Name</code> to skip the pipeline and talk to any agent directly.
+      <a class="ml-1 text-link underline underline-offset-2" href="/docs/routing/">How routing works</a>
+    </p>
+  </Section>
+
+  <Section eyebrow="The crew" title="Ten agents, ready on first launch." lead="Each one can be renamed, recolored and given its own provider, model and reasoning effort.">
+    <AgentRoster />
+  </Section>
+
+  <Section eyebrow="Bring your own model" title="Local or cloud. Only reasoning models." lead="Pick one model for everyone, or fine-tune per agent. Non-reasoning models are shown disabled, with the reason.">
+    <div class="grid gap-4 md:grid-cols-2" data-stagger>
+      <div class="glass rounded-lg p-6" data-stagger-item>
+        <h3 class="mb-4 font-semibold">Local</h3>
+        <ul class="flex flex-wrap gap-2">{PROVIDERS.local.map((p) => <li class="chip">{p}</li>)}</ul>
+      </div>
+      <div class="glass rounded-lg p-6" data-stagger-item>
+        <h3 class="mb-4 font-semibold">Cloud</h3>
+        <ul class="flex flex-wrap gap-2">{PROVIDERS.cloud.map((p) => <li class="chip">{p}</li>)}</ul>
+      </div>
+    </div>
+    <p class="mt-4 text-sm text-muted">Provider names are trademarks of their owners and are used only to describe compatibility.</p>
+  </Section>
+
+  <Section eyebrow="Privacy" title="Yours by design.">
+    <ul class="grid gap-4 sm:grid-cols-2" data-stagger>
+      {
+        privacy.map((p) => (
+          <li class="glass rounded-lg p-6" data-stagger-item>
+            <h3 class="font-semibold">{p.title}</h3>
+            <p class="mt-2 text-sm text-muted">{p.text}</p>
+          </li>
+        ))
+      }
+    </ul>
+  </Section>
+
+  <section class="container-page py-12">
+    <div class="glass-float rounded-xl px-6 py-14 text-center" data-reveal>
+      <h2 class="text-3xl font-bold tracking-tight md:text-4xl">Meet the pod.</h2>
+      <p class="mx-auto mt-3 max-w-lg text-muted">{SITE.tagline}</p>
+      <div class="mt-7 flex flex-wrap justify-center gap-3">
+        <a class="btn btn-primary" href="/download/">Download</a>
+        <a class="btn" href="/features/">See all features</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

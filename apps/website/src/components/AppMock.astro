@@ -1,0 +1,64 @@
+---
+import { AGENTS } from "../lib/site";
+
+// A faithful, static HTML rendition of the desktop app (sidebar, chat, members) for the hero.
+// It is decorative: screen readers get a single description instead of the fake UI.
+const chats = ["Coding", "General", "Long Horizon Agents", "Learning", "Creative"];
+const byName = Object.fromEntries(AGENTS.map((a) => [a.name, a]));
+const grad = (n: string) => `linear-gradient(135deg,${byName[n].from},${byName[n].to})`;
+---
+
+<figure class="glass-float @container overflow-hidden rounded-xl" role="img" aria-label="The Dolphin Pod app: a chat list on the left, a conversation with Roger, Lincoln and Rick in the middle and the member list on the right.">
+  <div aria-hidden="true">
+    <div class="flex items-center gap-1.5 border-b border-line px-4 py-3">
+      <span class="size-3 rounded-full bg-[#ff5f57]"></span>
+      <span class="size-3 rounded-full bg-[#febc2e]"></span>
+      <span class="size-3 rounded-full bg-[#28c840]"></span>
+    </div>
+    <div class="grid min-h-[22rem] grid-cols-1 text-left text-[0.8rem] @md:grid-cols-[10rem_minmax(0,1fr)] @xl:grid-cols-[11rem_minmax(0,1fr)_10rem]">
+      <div class="hidden flex-col gap-1 border-r border-line bg-surface-0 p-3 @md:flex">
+        <p class="px-2 pb-1 text-[0.65rem] font-semibold uppercase tracking-wider text-faint">Chats</p>
+        {chats.map((c, i) => <p class:list={["rounded-md px-2 py-1.5", i === 0 ? "bg-active text-fg" : "text-muted"]}>{c}</p>)}
+      </div>
+      <div class="flex min-w-0 flex-col gap-3 p-4">
+        <div class="ml-auto max-w-[80%] rounded-lg bg-accent-soft px-3 py-2 text-fg">
+          How do I debounce an input in React?
+        </div>
+        <div class="flex gap-2.5">
+          <span class="grid size-7 shrink-0 place-items-center rounded-full text-xs font-bold text-white" style={`background:${grad("Roger")}`}>R</span>
+          <div>
+            <p class="font-semibold">Roger <span class="chip ml-1 !px-2 !py-0 text-[0.65rem]">routing to Rick</span></p>
+            <p class="text-muted">Sounds like a coding job. Rick is on it, in quick mode.</p>
+          </div>
+        </div>
+        <div class="flex gap-2.5">
+          <span class="grid size-7 shrink-0 place-items-center rounded-full text-xs font-bold text-white" style={`background:${grad("Rick")}`}>R</span>
+          <div class="min-w-0">
+            <p class="font-semibold">Rick</p>
+            <p class="mb-2 text-xs italic text-faint">Thought for 4s</p>
+            <pre class="overflow-hidden rounded-md border border-line bg-code px-3 py-2 font-mono text-[0.72rem] leading-relaxed text-muted"><span class="text-[#c084fc]">function</span> useDebounced(value, ms) {"{"}
+  <span class="text-[#c084fc]">const</span> [v, setV] = useState(value);
+  useEffect(() =&gt; {"{"}
+    <span class="text-[#c084fc]">const</span> t = setTimeout(() =&gt; setV(value), ms);
+    <span class="text-[#c084fc]">return</span> () =&gt; clearTimeout(t);
+  {"}"}, [value, ms]);
+  <span class="text-[#c084fc]">return</span> v;
+{"}"}</pre>
+          </div>
+        </div>
+        <div class="mt-auto rounded-lg border border-line bg-input px-3 py-2 text-faint">Message Coding, or @mention an agent</div>
+      </div>
+      <div class="hidden flex-col gap-2 border-l border-line bg-surface-0 p-3 @xl:flex">
+        <p class="px-1 pb-1 text-[0.65rem] font-semibold uppercase tracking-wider text-faint">Members</p>
+        {
+          ["Roger", "Lincoln", "Rick", "Jordan", "Ducky", "Viktor", "Prof"].map((n) => (
+            <div class="flex items-center gap-2 px-1">
+              <span class="size-5 rounded-full" style={`background:${grad(n)}`}></span>
+              <span class="text-muted">{n}</span>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  </div>
+</figure>

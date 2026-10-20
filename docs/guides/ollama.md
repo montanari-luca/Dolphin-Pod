@@ -1,5 +1,7 @@
 # Local models with Ollama
 
+Run everything on your own machine: Ollama serves the model, Dolphin Pod talks to it, and nothing leaves your computer.
+
 1. Install Ollama from https://ollama.com and start it.
 2. Pull a thinking model, for example:
 

@@ -12,3 +12,5 @@ The reasoning-effort control shows only what the selected model supports: levels
 a thinking-token budget, an on/off switch, or nothing.
 
 Keys are stored in the system keychain and never written to the database.
+
+Setup guides: [Ollama](guides/ollama.md), [LM Studio](guides/lm-studio.md), [OpenRouter](guides/openrouter.md).

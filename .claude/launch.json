@@ -4,8 +4,22 @@
     {
       "name": "desktop-ui",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@dolphin/desktop", "dev"],
+      "runtimeArgs": [
+        "--filter",
+        "@dolphin/desktop",
+        "dev"
+      ],
       "port": 1420
+    },
+    {
+      "name": "website",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@dolphin/website",
+        "dev"
+      ],
+      "port": 4321
     }
   ]
 }

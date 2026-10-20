@@ -1,0 +1,79 @@
+---
+import BaseLayout from "./BaseLayout.astro";
+import { allDocs, neighbours, routeFor, titleOf, summaryOf, type DocEntry } from "../lib/docs";
+import { SITE } from "../lib/site";
+
+interface Props {
+  entry: DocEntry;
+}
+const { entry } = Astro.props;
+const { docs, guides } = await allDocs();
+const { prev, next } = await neighbours(entry);
+const here = routeFor(entry);
+const title = titleOf(entry);
+const groups = [
+  { label: "Documentation", items: docs },
+  { label: "Guides", items: guides },
+];
+---
+
+<BaseLayout title={title} description={summaryOf(entry)} type="article">
+  <div class="container-page grid gap-10 py-10 lg:grid-cols-[15rem_minmax(0,1fr)] lg:py-14">
+    <aside class="lg:sticky lg:top-24 lg:self-start">
+      <nav aria-label="Documentation" class="space-y-6 text-sm">
+        {
+          groups.map((g) => (
+            <div>
+              <h2 class="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted">{g.label}</h2>
+              <ul class="space-y-0.5">
+                {g.items.map((e) => (
+                  <li>
+                    <a
+                      href={routeFor(e)}
+                      aria-current={routeFor(e) === here ? "page" : undefined}
+                      class:list={[
+                        "transition-ui block rounded-md px-3 py-1.5 hover:bg-hover hover:text-fg",
+                        routeFor(e) === here ? "bg-active font-medium text-fg" : "text-muted",
+                      ]}
+                    >
+                      {titleOf(e)}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))
+        }
+      </nav>
+    </aside>
+
+    <article class="min-w-0">
+      <div class="glass rounded-xl p-6 sm:p-9">
+        <div class="prose-doc"><slot /></div>
+      </div>
+      <nav aria-label="Previous and next" class="mt-6 grid gap-3 sm:grid-cols-2">
+        {
+          prev ? (
+            <a href={routeFor(prev)} rel="prev" class="glass transition-ui rounded-lg p-4 hover:border-line-strong">
+              <span class="text-xs text-muted">Previous</span>
+              <span class="block font-medium">{titleOf(prev)}</span>
+            </a>
+          ) : (
+            <span />
+          )
+        }
+        {
+          next && (
+            <a href={routeFor(next)} rel="next" class="glass transition-ui rounded-lg p-4 text-right hover:border-line-strong">
+              <span class="text-xs text-muted">Next</span>
+              <span class="block font-medium">{titleOf(next)}</span>
+            </a>
+          )
+        }
+      </nav>
+      <p class="mt-6 text-sm text-muted">
+        <a class="underline underline-offset-2 hover:text-fg" href={`${SITE.docsEditBase}${entry.id}.md`} rel="noopener">Edit this page on GitHub</a>
+      </p>
+    </article>
+  </div>
+</BaseLayout>

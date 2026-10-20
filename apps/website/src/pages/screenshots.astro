@@ -1,0 +1,55 @@
+---
+import { Picture } from "astro:assets";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Section from "../components/Section.astro";
+import AppMock from "../components/AppMock.astro";
+
+const files = import.meta.glob<{ default: ImageMetadata }>("../assets/screenshots/*.{png,jpg,jpeg,webp}", { eager: true });
+
+const DESCRIPTIONS: Record<string, string> = {
+  chat: "a chat where Roger routes a request to a specialist and the answer streams in with its thinking",
+  agents: "the agent settings with each agent's color, provider, model and reasoning effort",
+  providers: "the providers page listing local and cloud providers and their reasoning models",
+  plans: "a plan awaiting approval in a chat, with the Approve plan button",
+  settings: "the settings window",
+  automations: "the automations page with prompts scheduled for a time of day",
+};
+
+const shots = Object.entries(files)
+  .map(([path, mod]) => {
+    const base = path.split("/").pop()!.replace(/\.\w+$/, "");
+    const [theme, ...rest] = base.split("-");
+    const slug = rest.join("-");
+    const isTheme = theme === "dark" || theme === "light";
+    const what = DESCRIPTIONS[isTheme ? slug : base] ?? "the Dolphin Pod app";
+    return { src: mod.default, theme: isTheme ? theme : "dark", slug: isTheme ? slug : base, alt: `Dolphin Pod in ${isTheme ? theme : "dark"} mode: ${what}.` };
+  })
+  .sort((a, b) => a.slug.localeCompare(b.slug) || a.theme.localeCompare(b.theme));
+---
+
+<BaseLayout title="Screenshots" description="A look at Dolphin Pod in dark and light themes.">
+  <div class="container-page pt-14 md:pt-20">
+    <p class="eyebrow mb-2" data-reveal>Screenshots</p>
+    <h1 class="text-4xl font-bold tracking-tight md:text-5xl" data-reveal data-reveal-delay="0.05">See the pod at work.</h1>
+    <p class="mt-4 max-w-2xl text-lg text-muted" data-reveal data-reveal-delay="0.1">Frosted glass in dark and light, following your system theme by default.</p>
+  </div>
+
+  {
+    shots.length > 0 ? (
+      <Section title="Gallery">
+        <ul class="grid gap-6 lg:grid-cols-2" data-stagger>
+          {shots.map((s) => (
+            <li class="glass-float overflow-hidden rounded-xl" data-stagger-item>
+              <Picture src={s.src} alt={s.alt} formats={["avif", "webp"]} widths={[640, 960, 1280, 1920]} sizes="(min-width: 1024px) 36rem, 100vw" class="h-auto w-full" loading="lazy" />
+              <p class="border-t border-line px-4 py-2.5 text-sm text-muted capitalize">{s.slug.replaceAll("-", " ")} · {s.theme}</p>
+            </li>
+          ))}
+        </ul>
+      </Section>
+    ) : (
+      <Section title="Real screenshots are on the way" lead="Until the first release is captured, here is an illustration of the main window.">
+        <div class="mx-auto max-w-4xl" data-reveal><AppMock /></div>
+      </Section>
+    )
+  }
+</BaseLayout>

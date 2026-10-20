@@ -1,0 +1,86 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Section from "../components/Section.astro";
+
+const groups = [
+  {
+    title: "Chats and agents",
+    text: "A shared room for a whole crew.",
+    items: [
+      ["Chats with a crew", "Coding, General, Long Horizon Agentic, Learning and Creative out of the box, plus your own."],
+      ["Customizable agents", "Rename (one word, so mentions work), recolor with a solid or gradient, and give each agent its own provider, model and effort."],
+      ["Roles for you", "Pick a display name and cosmetic roles with icons and gradients. Everyone starts as Master, in rainbow."],
+    ],
+  },
+  {
+    title: "Routing and modes",
+    text: "Intent first, then the right specialist.",
+    items: [
+      ["Roger and Lincoln", "Roger acknowledges instantly and decides intent. Lincoln briefs the specialist and enforces permissions."],
+      ["Modes", "Learn, quick, plan and implement. Asking how to write something goes to Prof; asking for it done goes to Rick."],
+      ["@mentions", "Skip the pipeline and talk to any agent directly."],
+    ],
+  },
+  {
+    title: "Plans and permissions",
+    text: "Power only after you say so.",
+    items: [
+      ["Plan before power", "Planning is read-only. Approve a plan with a button or by replying and the planner gets full agentic permissions."],
+      ["Workspace-bound", "Agents write files and run commands only inside the folder you gave the chat."],
+      ["Fully logged", "Every permission change is announced and every action lands in the Action log. Enforced by the app, not by prompts."],
+    ],
+  },
+  {
+    title: "Thinking and models",
+    text: "See the reasoning, keep the control.",
+    items: [
+      ["Streamed thinking", "Reasoning streams live from every provider, with full Markdown, code highlighting and math."],
+      ["Any provider", "Ollama, LM Studio, OpenAI-compatible servers, OpenRouter, OpenAI, Anthropic, Gemini, xAI, Mistral, DeepSeek, Groq, Together, Fireworks and Azure OpenAI."],
+      ["Adaptive effort", "The effort control shows only what the model supports: levels, a token budget, an on/off switch, or nothing."],
+      ["Web access", "Every agent can search the web: server-side search through OpenRouter, a built-in key-less engine for the rest."],
+    ],
+  },
+  {
+    title: "Efficiency and housekeeping",
+    text: "Quiet, tidy and cheap on tokens.",
+    items: [
+      ["Preference efficiency", "Only the relevant parts of your custom instructions are sent with each request."],
+      ["Cleanup", "A rolling 24-hour cleanup per chat keeps rooms short."],
+      ["Automations", "Run a prompt at a time of day. Roger can change any setting from chat."],
+      ["Hover cards and usage", "Hover any agent for its job, all-time token use, thinking time and working time."],
+    ],
+  },
+  {
+    title: "Everywhere you are",
+    text: "Desktop today, iPhone next.",
+    items: [
+      ["Frosted glass UI", "Dark and light themes, reduced-transparency and reduced-motion options built in."],
+      ["Mac, Windows and Linux", "A native Tauri app with the system keychain and window vibrancy."],
+      ["iPhone and remote control", "Coming soon: encrypted sync, a SwiftUI chat app and your iPhone as a remote control for the desktop."],
+    ],
+  },
+];
+---
+
+<BaseLayout title="Features" description="Chats, routing and modes, plans and permissions, streamed thinking, cleanup and automations, and more. Everything in Dolphin Pod.">
+  <div class="container-page pt-14 md:pt-20">
+    <p class="eyebrow mb-2" data-reveal>Features</p>
+    <h1 class="max-w-3xl text-4xl font-bold tracking-tight md:text-5xl" data-reveal data-reveal-delay="0.05">
+      Everything the pod can do.
+    </h1>
+  </div>
+  {
+    groups.map((g) => (
+      <Section title={g.title} lead={g.text}>
+        <ul class="grid gap-4 md:grid-cols-2 lg:grid-cols-3" data-stagger>
+          {g.items.map(([t, d]) => (
+            <li class="glass rounded-lg p-6" data-stagger-item>
+              <h3 class="font-semibold">{t}</h3>
+              <p class="mt-2 text-sm text-muted">{d}</p>
+            </li>
+          ))}
+        </ul>
+      </Section>
+    ))
+  }
+</BaseLayout>

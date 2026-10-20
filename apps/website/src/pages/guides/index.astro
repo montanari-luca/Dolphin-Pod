@@ -1,0 +1,26 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { allDocs, routeFor, summaryOf, titleOf } from "../../lib/docs";
+
+const { guides } = await allDocs();
+---
+
+<BaseLayout title="Guides" description="Step-by-step guides for setting up models and providers in Dolphin Pod.">
+  <div class="container-page py-14 md:py-20">
+    <p class="eyebrow mb-2" data-reveal>Guides</p>
+    <h1 class="text-4xl font-bold tracking-tight md:text-5xl" data-reveal data-reveal-delay="0.05">Set up your models.</h1>
+    <ul class="mt-10 grid gap-4 md:grid-cols-2" data-stagger>
+      {
+        guides.map((g) => (
+          <li data-stagger-item>
+            <a href={routeFor(g)} class="glass transition-ui block h-full rounded-lg p-6 hover:-translate-y-0.5 hover:border-line-strong">
+              <h2 class="text-lg font-semibold">{titleOf(g)}</h2>
+              <p class="mt-2 text-sm text-muted">{summaryOf(g)}</p>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+    <p class="mt-10 text-sm text-muted">Guides for encrypted sync and iPhone remote control arrive with the iOS app.</p>
+  </div>
+</BaseLayout>

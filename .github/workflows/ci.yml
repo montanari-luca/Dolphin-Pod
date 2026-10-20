@@ -35,5 +35,7 @@ jobs:
         run: |
           pnpm typecheck
           pnpm test
+      - name: Website build
+        run: pnpm --filter @dolphin/website build
       - name: Desktop build check
         run: pnpm --filter @dolphin/desktop tauri build --no-bundle

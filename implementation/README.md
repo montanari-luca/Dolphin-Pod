@@ -3,12 +3,12 @@
 > **Delete this whole `implementation/` directory once every phase below is complete.** These are working
 > build plans, not product documentation; lasting docs belong in `docs/` and the app READMEs.
 
-Phases 0 (foundation) and 1 (desktop app) are done. What is left:
+Phases 0 (foundation) and 1 (desktop app) are done; Phase 3 (website) is built with a few carry-overs. What is left:
 
 | File | Phase | Scope |
 | --- | --- | --- |
 | [Phase02.md](Phase02.md) | 2 | Encrypted cloud sync, SwiftUI iOS app, iPhone remote control (plus Phase 1 carry-overs) |
-| [Phase03.md](Phase03.md) | 3 | Product website with Astro + Tailwind + Motion (pnpm) |
+| [Phase03.md](Phase03.md) | 3 | Website: built; see the carry-overs at the top of the file |
 
 Ground rules that apply to every phase:
 

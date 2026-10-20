@@ -1,6 +1,8 @@
 # Dolphin Pod documentation
 
-Markdown source for the website's documentation and guides (Phase 3 renders these).
+Markdown source for the website's documentation and guides. The website reads these files directly (there are no
+copies), so edit them here. Add a new page by creating a `.md` file with a `# Title` heading; to control where it
+appears in the sidebar, list it in `apps/website/src/lib/docs.ts`.
 
 - [Getting started](getting-started.md)
 - [Agents](agents.md)
@@ -8,4 +10,5 @@ Markdown source for the website's documentation and guides (Phase 3 renders thes
 - [Providers and models](providers.md)
 - [Routing: Roger, Lincoln and @ mentions](routing.md)
 - [Permissions and workspaces](permissions.md)
-- Guides: [Local models with Ollama](guides/ollama.md)
+- Guides: [Local models with Ollama](guides/ollama.md), [Local models with LM Studio](guides/lm-studio.md),
+  [Cloud models with OpenRouter](guides/openrouter.md)

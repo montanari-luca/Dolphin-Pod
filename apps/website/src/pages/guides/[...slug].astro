@@ -1,0 +1,16 @@
+---
+import { getCollection, render } from "astro:content";
+import DocsLayout from "../../layouts/DocsLayout.astro";
+import { isGuide } from "../../lib/docs";
+
+export async function getStaticPaths() {
+  const entries = (await getCollection("docs")).filter(isGuide);
+  // entry.id is "guides/ollama"; the route already supplies the "guides/" prefix.
+  return entries.map((entry) => ({ params: { slug: entry.id.replace(/^guides\//, "") }, props: { entry } }));
+}
+
+const { entry } = Astro.props;
+const { Content } = await render(entry);
+---
+
+<DocsLayout entry={entry}><Content /></DocsLayout>

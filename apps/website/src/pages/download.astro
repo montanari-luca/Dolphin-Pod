@@ -1,0 +1,29 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import DownloadButtons from "../components/DownloadButtons.astro";
+import Section from "../components/Section.astro";
+import { loadManifest } from "../lib/manifest";
+
+const manifest = await loadManifest();
+---
+
+<BaseLayout title="Download" description="Download Dolphin Pod for macOS, Windows, Linux and (soon) iOS. Always the latest release.">
+  <div class="container-page pt-14 md:pt-20">
+    <p class="eyebrow mb-2" data-reveal>Download</p>
+    <h1 class="text-4xl font-bold tracking-tight md:text-5xl" data-reveal data-reveal-delay="0.05">Get Dolphin Pod.</h1>
+    <p class="mt-4 text-lg text-muted" data-reveal data-reveal-delay="0.1">
+      Latest version: <strong class="text-fg" data-dl-version>{manifest.latest}</strong>. Links on this page always match the in-app updater.
+    </p>
+  </div>
+  <Section title="Choose your platform" lead="Builds that are not published yet show as coming soon.">
+    <DownloadButtons />
+  </Section>
+  <Section title="Good to know">
+    <ul class="max-w-2xl list-disc space-y-2 pl-5 text-muted">
+      <li>Dolphin Pod works with local models (Ollama, LM Studio) or cloud providers. You bring the model; <a class="text-link underline underline-offset-2" href="/guides/">guides</a> show how to set up each.</li>
+      <li>API keys are stored in your system keychain, never in the app database.</li>
+      <li>The apps check for updates on launch and every six hours.</li>
+      <li>Not sure where to start? Read <a class="text-link underline underline-offset-2" href="/docs/getting-started/">Getting started</a>.</li>
+    </ul>
+  </Section>
+</BaseLayout>
