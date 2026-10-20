@@ -7,6 +7,7 @@ use dolphin_core::events::CoreEvent;
 use dolphin_core::model::*;
 use dolphin_core::secrets::KeyringStore;
 use dolphin_core::settings::{SettingChange, SettingDef};
+use dolphin_core::remote::RemoteSettings;
 use dolphin_core::sync::manager::{self as sync, DeviceInfo, SyncSetupResult, SyncStatus};
 use dolphin_core::update::{self, UpdateInfo};
 use dolphin_core::{Core, CoreError, CoreRef, scheduler};
@@ -342,6 +343,22 @@ fn set_device_name(core: State<CoreRef>, name: String) -> Res<()> {
 }
 
 #[tauri::command]
+fn remote_settings(core: State<CoreRef>) -> RemoteSettings {
+    core.remote_settings()
+}
+
+#[tauri::command]
+fn set_remote_enabled(core: State<CoreRef>, enabled: bool) -> Res<RemoteSettings> {
+    core.set_remote_enabled(enabled)?;
+    Ok(core.remote_settings())
+}
+
+#[tauri::command]
+async fn remote_authorize(core: State<'_, CoreRef>, device_id: String, allow: bool) -> Res<()> {
+    core.remote_authorize(&device_id, allow).await
+}
+
+#[tauri::command]
 async fn sync_fetch_attachment(core: State<'_, CoreRef>, attachment_id: String) -> Res<String> {
     core.sync_fetch_attachment(&attachment_id).await
 }
@@ -379,7 +396,8 @@ pub fn run() {
             core.set_device_info(None, std::env::consts::OS, "desktop");
             tauri::async_runtime::spawn(async move {
                 scheduler::spawn(c.clone());
-                sync::spawn(c);
+                sync::spawn(c.clone());
+                dolphin_core::remote::spawn(c);
             });
             spawn_update_checks(core.clone());
             app.manage(core);
@@ -435,6 +453,9 @@ pub fn run() {
             sync_revoke_device,
             set_device_name,
             sync_fetch_attachment,
+            remote_settings,
+            set_remote_enabled,
+            remote_authorize,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Dolphin Pod");

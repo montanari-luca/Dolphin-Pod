@@ -62,6 +62,9 @@ export function tauriBackend(): Backend {
     syncDevices: () => invoke("sync_devices"),
     syncRevokeDevice: (deviceId) => invoke("sync_revoke_device", { deviceId }),
     setDeviceName: (name) => invoke("set_device_name", { name }),
+    remoteSettings: () => invoke("remote_settings"),
+    setRemoteEnabled: (enabled) => invoke("set_remote_enabled", { enabled }),
+    remoteAuthorize: (deviceId, allow) => invoke("remote_authorize", { deviceId, allow }),
     async pickFolder() {
       const r = await open({ directory: true, multiple: false, title: "Choose a workspace folder" });
       return typeof r === "string" ? r : null;

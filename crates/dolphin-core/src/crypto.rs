@@ -358,11 +358,14 @@ mod tests {
         assert!(RecoveryKey::parse("not twenty four words").is_err());
     }
 
+    /// Debug builds are an order of magnitude slower than release: `cargo test -p dolphin-core --release default_parameters -- --ignored --nocapture`.
     #[test]
+    #[ignore = "timing, release builds only"]
     fn default_parameters_take_a_noticeable_but_bearable_time() {
         let start = std::time::Instant::now();
         create_account("benchmark passphrase", KdfParams::DEFAULT).unwrap();
         let ms = start.elapsed().as_millis();
-        assert!(ms < 5_000, "key derivation took {ms} ms");
+        println!("Argon2id (64 MiB, t=3) took {ms} ms");
+        assert!(ms < 2_000, "key derivation took {ms} ms");
     }
 }

@@ -12,6 +12,7 @@ import type {
   ModelInfo,
   PermissionGrant,
   PermissionLevel,
+  RemoteSettings,
   ProviderConfig,
   ProviderKindInfo,
   SettingChange,
@@ -82,6 +83,9 @@ export interface Backend {
   syncDevices(): Promise<DeviceInfo[]>;
   syncRevokeDevice(deviceId: string): Promise<void>;
   setDeviceName(name: string): Promise<void>;
+  remoteSettings(): Promise<RemoteSettings>;
+  setRemoteEnabled(enabled: boolean): Promise<RemoteSettings>;
+  remoteAuthorize(deviceId: string, allow: boolean): Promise<void>;
   pickFolder(): Promise<string | null>;
   pickFiles(): Promise<string[]>;
   openUrl(url: string): Promise<void>;

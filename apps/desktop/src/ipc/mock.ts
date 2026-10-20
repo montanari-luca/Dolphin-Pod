@@ -83,6 +83,8 @@ public static int add(int a, int b) {
 Quick check: what would you change to return a \`double\`?`;
 
 let syncState: SyncStatus = { state: "off", provider: null, lastSyncAt: null, pending: 0, error: null, deviceId: "this", deviceName: "This computer" };
+let remoteOn = false;
+const mockAuthorized: Record<string, boolean> = {};
 let emitSync: (() => void) | null = null;
 function setSync(patch: Partial<SyncStatus>) {
   syncState = { ...syncState, ...patch };
@@ -325,11 +327,19 @@ export function mockBackend(): Backend {
     syncChangePassphrase: async () => {},
     syncNewRecoveryKey: async () => "legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth title",
     syncDevices: async (): Promise<DeviceInfo[]> => [
-      { id: "this", name: "This computer", platform: "macos", kind: "desktop", remote: false, lastSeen: now(), revoked: false, thisDevice: true },
-      { id: "phone", name: "Luca's iPhone", platform: "ios", kind: "phone", remote: false, lastSeen: now() - 120_000, revoked: false, thisDevice: false },
+      { id: "this", name: "This computer", platform: "macos", kind: "desktop", remote: remoteOn, authorized: false, lastSeen: now(), revoked: false, thisDevice: true },
+      { id: "phone", name: "Luca's iPhone", platform: "ios", kind: "phone", remote: false, authorized: !!mockAuthorized.phone, lastSeen: now() - 120_000, revoked: false, thisDevice: false },
     ],
     syncRevokeDevice: async () => {},
     setDeviceName: async (name) => setSync({ deviceName: name }),
+    remoteSettings: async () => ({ enabled: remoteOn, lanPort: remoteOn ? 49152 : null }),
+    async setRemoteEnabled(enabled) {
+      remoteOn = enabled;
+      return { enabled, lanPort: enabled ? 49152 : null };
+    },
+    async remoteAuthorize(id, allow) {
+      mockAuthorized[id] = allow;
+    },
     checkUpdate: async () => ({ current: "0.1.0", latest: "0.1.0", available: false, url: null }),
     pickFolder: async () => "/Users/you/Projects/demo",
     pickFiles: async () => [],

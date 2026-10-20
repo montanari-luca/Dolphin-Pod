@@ -17,6 +17,9 @@ type Meta = {
   plan?: { approved?: boolean };
   needsSetup?: boolean;
   notice?: string;
+  remote?: boolean;
+  remoteDevice?: string;
+  remoteTarget?: string;
   context?: { window?: number; peakTokens?: number; savedTokens?: number; compactions?: number; compactedMessages?: number; cacheRead?: number; cacheWritten?: number };
 };
 
@@ -54,6 +57,7 @@ export const MessageItem = memo(function MessageItem({ message, agent, grouped }
             {!isUser && meta.routing?.mode && meta.routing.mode !== "answer" && <Badge tone={meta.routing.mode === "plan" ? "warning" : "accent"}>{MODE_LABEL[meta.routing.mode] ?? meta.routing.mode}</Badge>}
             {meta.routing?.via === "mention" && <Badge>direct</Badge>}
             <span className="text-[11px] text-faint tabular-nums">{formatTime(message.createdAt)}</span>
+            {isUser && meta.remote && <Badge tone="accent">{meta.remoteDevice ? `via ${meta.remoteDevice}` : meta.remoteTarget ? `sent to ${meta.remoteTarget}` : "remote"}</Badge>}
           </div>
         )}
 

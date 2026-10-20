@@ -15,7 +15,7 @@ import type {
 import { backend, errorText, type AppInfo, type Backend, type Settings } from "@/ipc/api";
 
 export type View = "chat" | "settings" | "automations";
-export type SettingsTab = "profile" | "general" | "providers" | "agents" | "preferences" | "sync" | "appearance" | "about";
+export type SettingsTab = "profile" | "general" | "providers" | "agents" | "preferences" | "sync" | "remote" | "appearance" | "about";
 
 export interface Toast {
   id: number;
