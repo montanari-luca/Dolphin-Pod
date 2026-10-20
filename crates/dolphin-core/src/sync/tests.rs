@@ -522,3 +522,123 @@ async fn random_schedules_on_three_replicas_always_converge() {
         assert_eq!(totals[0], totals[2]);
     }
 }
+
+// ------------------------------------------------------------------------------------ backend contract
+
+use super::backend::{CommandRow, DeviceRow, RemoteOp, SyncBackend};
+use crate::crypto::Sealed;
+
+fn sealed(b: &[u8]) -> Sealed {
+    Sealed { nonce: vec![7; 24], ciphertext: b.to_vec() }
+}
+
+fn op(id: &str, hlc: &str, dev: &str) -> RemoteOp {
+    RemoteOp { seq: 0, kind: "chat".into(), id: id.into(), hlc: hlc.into(), device_id: dev.into(), sealed: sealed(b"x"), deleted: false }
+}
+
+/// What every relay must do, run against the in-memory one always and against Postgres when a URL is given.
+async fn backend_contract(b: &dyn SyncBackend) {
+    b.init().await.unwrap();
+    b.init().await.unwrap(); // idempotent
+
+    let (account, _, _) = create_account("pw", KdfParams::FAST_FOR_TESTS).unwrap();
+    assert!(b.get_account().await.unwrap().is_none());
+    assert!(b.create_account(&account).await.unwrap());
+    assert!(!b.create_account(&account).await.unwrap(), "the second device to create loses the race");
+    assert_eq!(b.get_account().await.unwrap().unwrap(), account);
+    let mut next = account.clone();
+    next.generation = 1;
+    assert!(!b.replace_account(&next, 5).await.unwrap(), "stale generation");
+    assert!(b.replace_account(&next, 0).await.unwrap());
+    assert_eq!(b.get_account().await.unwrap().unwrap().generation, 1);
+
+    b.push_ops("dev-a", &[op("r1", "0001", "dev-a"), op("r2", "0002", "dev-a")]).await.unwrap();
+    b.push_ops("dev-a", &[op("r1", "0001", "dev-a"), op("r3", "0003", "dev-a")]).await.unwrap(); // retry + new
+    let all = b.pull_ops(0, 100).await.unwrap();
+    assert_eq!(all.iter().map(|o| o.id.as_str()).collect::<Vec<_>>(), ["r1", "r2", "r3"], "a retried push adds nothing");
+    assert!(all.windows(2).all(|w| w[0].seq < w[1].seq));
+    let after = b.pull_ops(all[0].seq, 1).await.unwrap();
+    assert_eq!(after.len(), 1);
+    assert_eq!(after[0].id, "r2");
+    assert_eq!(after[0].sealed, sealed(b"x"));
+
+    let dev = |id: &str| DeviceRow { id: id.into(), last_seen_ms: 5, revoked: false, sealed: sealed(b"name") };
+    b.upsert_device(&dev("dev-a")).await.unwrap();
+    b.upsert_device(&dev("dev-b")).await.unwrap();
+    assert_eq!(b.list_devices().await.unwrap().len(), 2);
+    b.revoke_device("dev-b").await.unwrap();
+    assert!(b.push_ops("dev-b", &[op("r9", "0009", "dev-b")]).await.is_err(), "a removed device can't write");
+    b.upsert_device(&dev("dev-b")).await.unwrap();
+    assert!(b.list_devices().await.unwrap().iter().find(|d| d.id == "dev-b").unwrap().revoked, "a heartbeat doesn't un-revoke");
+
+    let cmd = |id: &str, ttl: i64| CommandRow {
+        id: id.into(), seq: 0, from_device_id: "phone".into(), target_device_id: "desk".into(),
+        created_at: now_ms(), expires_at: now_ms() + ttl, sealed: sealed(b"do it"), status: "new".into(),
+    };
+    b.put_command(&cmd("c1", 60_000)).await.unwrap();
+    b.put_command(&cmd("c1", 60_000)).await.unwrap();
+    b.put_command(&cmd("c2", -1_000)).await.unwrap(); // already expired
+    let pending = b.pull_commands("desk", 10).await.unwrap();
+    assert_eq!(pending.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(), ["c1"]);
+    assert!(b.pull_commands("someone-else", 10).await.unwrap().is_empty());
+    b.set_command_status("c1", "taken").await.unwrap();
+    assert!(b.pull_commands("desk", 10).await.unwrap().is_empty());
+    assert_eq!(b.get_command("c1").await.unwrap().unwrap().status, "taken");
+
+    assert!(!b.has_blob("att").await.unwrap());
+    b.put_blob("att", &[sealed(b"one"), sealed(b"two")]).await.unwrap();
+    assert!(b.has_blob("att").await.unwrap());
+    assert_eq!(b.get_blob("att").await.unwrap().unwrap(), vec![sealed(b"one"), sealed(b"two")]);
+    b.put_blob("att", &[sealed(b"only")]).await.unwrap();
+    assert_eq!(b.get_blob("att").await.unwrap().unwrap().len(), 1, "re-upload replaces");
+}
+
+#[tokio::test]
+async fn the_in_memory_relay_meets_the_contract() {
+    backend_contract(&MemoryBackend::new()).await;
+}
+
+/// `DOLPHIN_TEST_PG_URL=postgres://user@localhost/db?sslmode=disable cargo test -p dolphin-core postgres -- --ignored`
+#[tokio::test]
+#[ignore = "needs DOLPHIN_TEST_PG_URL"]
+async fn postgres_meets_the_contract_and_two_devices_converge_through_it() {
+    let url = std::env::var("DOLPHIN_TEST_PG_URL").expect("DOLPHIN_TEST_PG_URL");
+    let fresh = || super::postgres::PostgresBackend::new(&url).unwrap();
+    let admin = fresh();
+    admin.init().await.unwrap();
+    let client = admin.client_for_tests().await;
+    client.batch_execute("DROP SCHEMA dolphinpod CASCADE").await.unwrap();
+    backend_contract(&fresh()).await;
+    client.batch_execute("DROP SCHEMA dolphinpod CASCADE").await.unwrap();
+
+    let backend: Arc<dyn SyncBackend> = Arc::new(fresh());
+    backend.init().await.unwrap();
+    let (_, key, _) = create_account("pw", KdfParams::FAST_FOR_TESTS).unwrap();
+    let mk = || {
+        let db = Db::open_in_memory().unwrap();
+        seed::seed_if_needed(&db).unwrap();
+        let secrets = Arc::new(MemoryStore::default());
+        (db.clone(), SyncEngine::new(db, secrets, Arc::new(fresh()), key.clone(), "pg"))
+    };
+    let (a_db, a) = mk();
+    let (b_db, b) = mk();
+    a.create().await.unwrap();
+    b.join().await.unwrap();
+    let chat = a_db.list_chats().unwrap().remove(0);
+    a_db.set_setting_raw("profile.display_name", &json!("Pg")).unwrap();
+    let now = now_ms();
+    let m = crate::model::Message {
+        id: new_id(), chat_id: chat.id.clone(), agent_id: None, kind: MessageKind::Text, status: MessageStatus::Done,
+        content: "through postgres".into(), reasoning: None, error: None, mentions: vec![], attachments: vec![], meta: json!({}),
+        thinking_ms: None, working_ms: None, tokens_in: None, tokens_out: None, created_at: now, updated_at: now,
+    };
+    a_db.insert_message(&m).unwrap();
+    for _ in 0..3 {
+        a.cycle().await.unwrap();
+        b.cycle().await.unwrap();
+    }
+    assert_eq!(b_db.get_message(&m.id).unwrap().content, "through postgres");
+    assert_eq!(b_db.setting_raw("profile.display_name").unwrap(), Some(json!("Pg")));
+    assert_eq!(a_db.sync_snapshot().unwrap(), b_db.sync_snapshot().unwrap());
+    client.batch_execute("DROP SCHEMA dolphinpod CASCADE").await.unwrap();
+}

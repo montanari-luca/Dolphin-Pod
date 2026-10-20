@@ -5,6 +5,7 @@ pub mod backend;
 pub mod engine;
 pub mod hlc;
 pub mod kinds;
+pub mod postgres;
 pub mod store;
 
 pub use backend::{MemoryBackend, SyncBackend};
