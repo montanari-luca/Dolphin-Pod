@@ -5,4 +5,8 @@ export type ModelRef = { providerId: string, modelId: string, effort: EffortValu
 /**
  * Capabilities copied from `ModelInfo` when the model was picked.
  */
-vision: boolean, tools: boolean, };
+vision: boolean, tools: boolean, 
+/**
+ * Context window in tokens, copied from `ModelInfo` when the model was picked (None = unknown).
+ */
+contextWindow: number | null, };

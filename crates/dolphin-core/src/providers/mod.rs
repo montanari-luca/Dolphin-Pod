@@ -115,6 +115,13 @@ pub struct ChatRequest {
     pub web_search: bool,
     /// The model is a reasoning model: ask the provider to return its reasoning stream.
     pub want_reasoning: bool,
+    /// Stable key for provider-side prompt caching (OpenAI `prompt_cache_key`). Same chat + agent = same key.
+    pub cache_key: Option<String>,
+    /// How many leading `messages` are stable from one turn to the next. Providers with explicit cache
+    /// breakpoints (Anthropic, Anthropic models on OpenRouter) mark the end of that prefix.
+    pub stable_messages: Option<usize>,
+    /// The context length the request is budgeted for. Ollama gets it as `num_ctx`.
+    pub context_window: Option<u32>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -129,6 +136,8 @@ pub enum ProviderEvent {
     ReasoningDelta(String),
     ToolCall(ToolCall),
     Usage(Usage),
+    /// Prompt-cache accounting for the request (tokens served from / written to the provider's cache).
+    CacheUsage { read: i64, written: i64 },
     /// End of one model turn. `raw_assistant` is the native assistant turn for tool-loop replay.
     Done { stop_reason: Option<String>, raw_assistant: Option<Value> },
     Error(String),

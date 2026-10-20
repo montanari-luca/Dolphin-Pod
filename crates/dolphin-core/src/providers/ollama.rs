@@ -76,9 +76,19 @@ pub(crate) fn build_body(req: &ChatRequest) -> Value {
     if req.json_mode {
         body["format"] = json!("json");
     }
+    // A fixed num_ctx keeps the loaded model and its KV cache (prompt prefix reuse) stable between requests;
+    // keep_alive stops the model from unloading between turns.
+    let mut options = json!({});
     if let Some(n) = req.max_tokens {
-        body["options"] = json!({ "num_predict": n });
+        options["num_predict"] = json!(n);
     }
+    if let Some(n) = req.context_window {
+        options["num_ctx"] = json!(n);
+    }
+    if options.as_object().is_some_and(|o| !o.is_empty()) {
+        body["options"] = options;
+    }
+    body["keep_alive"] = json!("30m");
     body
 }
 
@@ -234,5 +244,15 @@ mod tests {
         assert_eq!(b["think"], "high");
         assert_eq!(b["messages"][0]["role"], "system");
         assert_eq!(b["tools"][0]["function"]["name"], "t");
+    }
+
+    #[test]
+    fn body_pins_context_length_and_keeps_the_model_loaded() {
+        let req = ChatRequest { model: "qwen3.5:2b".into(), context_window: Some(32_768), max_tokens: Some(512), ..Default::default() };
+        let b = build_body(&req);
+        assert_eq!(b["options"]["num_ctx"], 32_768);
+        assert_eq!(b["options"]["num_predict"], 512);
+        assert_eq!(b["keep_alive"], "30m");
+        assert!(build_body(&ChatRequest::default()).get("options").is_none());
     }
 }

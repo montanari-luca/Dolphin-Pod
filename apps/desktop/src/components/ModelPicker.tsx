@@ -94,7 +94,7 @@ export function ModelPicker({ value, onChange, purpose = "reasoning", allowNone 
 
   const pick = (m: ModelInfo) => {
     if (!pickedProvider) return;
-    onChange({ providerId: pickedProvider, modelId: m.id, effort: purpose === "image" ? null : defaultEffort(m.effort), vision: m.vision, tools: m.tools });
+    onChange({ providerId: pickedProvider, modelId: m.id, effort: purpose === "image" ? null : defaultEffort(m.effort), vision: m.vision, tools: m.tools, contextWindow: m.contextWindow });
     setOpen(false);
   };
 

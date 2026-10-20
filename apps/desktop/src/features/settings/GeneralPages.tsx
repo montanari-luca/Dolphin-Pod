@@ -46,7 +46,7 @@ export function GeneralPage() {
   const [utility, setUtility] = useSetting<ModelRef | null>("utility.model");
   return (
     <>
-      <PageHeader title="General" description="Housekeeping, internal models and how much context agents get." />
+      <PageHeader title="General" description="Housekeeping, internal models and how context is managed." />
       <Card title="Utility model">
         <div className="py-3">
           <p className="mb-3 text-[12.5px] text-muted leading-relaxed">
@@ -64,10 +64,24 @@ export function GeneralPage() {
           <NumberSetting k="cleanup.default_ttl_hours" min={1} max={2160} suffix="hours" />
         </Row>
       </Card>
-      <Card title="Agents">
-        <Row title="Context window" description="How many recent messages agents see.">
+      <Card title="Context">
+        <Row title="Compact long conversations" description="When a conversation closes in on a model's context window, older messages are summarized instead of dropped, so the model keeps the thread without hitting its limit.">
+          <BoolSetting k="context.auto_compact" />
+        </Row>
+        <Row title="Compact at" description="How full the usable context window may get before compaction starts.">
+          <NumberSetting k="context.compact_at" min={30} max={98} suffix="%" />
+        </Row>
+        <Row title="Recent messages kept verbatim" description="Agents see this many recent messages word for word; older ones are summarized once a chat grows past it.">
           <NumberSetting k="context.history_messages" min={4} max={200} suffix="messages" />
         </Row>
+        <Row title="Compress tool output" description="Shrink large tool results (logs, files, search hits, JSON) before the model sees them. Errors and the important parts are kept, and the model can fetch the full text on request.">
+          <BoolSetting k="context.compress_tools" />
+        </Row>
+        <Row title="Local model context length" description="Context length requested from Ollama models (a model's own maximum is used if smaller). Higher remembers more but uses more memory.">
+          <NumberSetting k="context.local_window" min={2048} max={1048576} suffix="tokens" width={96} />
+        </Row>
+      </Card>
+      <Card title="Agents">
         <Row title="Stuck-agent timeout" description="If an agent produces nothing for this long, Roger checks on it.">
           <NumberSetting k="supervisor.stall_seconds" min={15} max={1800} suffix="seconds" />
         </Row>

@@ -79,7 +79,9 @@ pub(crate) fn build_body(req: &ChatRequest) -> Value {
         }
         messages.push(json!({ "role": role, "content": content }));
     };
-    for m in &req.messages {
+    // Index (in `messages`) of the last message of the stable prefix, for a cache breakpoint.
+    let mut stable_at: Option<usize> = None;
+    for (i, m) in req.messages.iter().enumerate() {
         match m.role {
             Role::User => push(&mut messages, "user", user_parts(&m.parts)),
             Role::Assistant => push(&mut messages, "assistant", assistant_blocks(m)),
@@ -90,6 +92,18 @@ pub(crate) fn build_body(req: &ChatRequest) -> Value {
                 vec![json!({ "type": "tool_result", "tool_use_id": m.tool_call_id, "content": m.text_content() })],
             ),
         }
+        if req.stable_messages == Some(i + 1) && !messages.is_empty() {
+            stable_at = Some(messages.len() - 1);
+        }
+    }
+    // Prompt caching (max 4 breakpoints): tools, system, end of the stable history, end of the request.
+    // The last one lets every step of a tool loop reuse the previous step's prefix.
+    if let Some(i) = stable_at {
+        mark_cacheable(&mut messages, i);
+    }
+    if !messages.is_empty() {
+        let last = messages.len() - 1;
+        mark_cacheable(&mut messages, last);
     }
     let mut max_tokens = req.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS);
     let mut body = json!({ "model": req.model, "messages": messages, "stream": true });
@@ -112,13 +126,28 @@ pub(crate) fn build_body(req: &ChatRequest) -> Value {
     }
     body["max_tokens"] = json!(max_tokens);
     if !req.tools.is_empty() {
-        body["tools"] = json!(req
+        let mut tools = req
             .tools
             .iter()
             .map(|t| json!({ "name": t.name, "description": t.description, "input_schema": t.parameters, "eager_input_streaming": true }))
-            .collect::<Vec<_>>());
+            .collect::<Vec<_>>();
+        if let Some(last) = tools.last_mut() {
+            last["cache_control"] = json!({ "type": "ephemeral" });
+        }
+        body["tools"] = json!(tools);
     }
     body
+}
+
+/// Put a cache breakpoint on the last block of `messages[i]` (thinking and empty text blocks cannot carry one).
+fn mark_cacheable(messages: &mut [Value], i: usize) {
+    let Some(blocks) = messages.get_mut(i).and_then(|m| m["content"].as_array_mut()) else { return };
+    let Some(block) = blocks.last_mut() else { return };
+    let ty = block["type"].as_str().unwrap_or_default();
+    if matches!(ty, "thinking" | "redacted_thinking") || (ty == "text" && block["text"].as_str().is_none_or(|t| t.trim().is_empty())) {
+        return;
+    }
+    block["cache_control"] = json!({ "type": "ephemeral" });
 }
 
 #[derive(Default)]
@@ -126,6 +155,8 @@ pub(crate) struct StreamState {
     blocks: HashMap<u64, Value>,
     json_buf: HashMap<u64, String>,
     usage: Usage,
+    cache_read: i64,
+    cache_written: i64,
     stop_reason: Option<String>,
 }
 
@@ -136,6 +167,8 @@ impl StreamState {
         match v["type"].as_str().unwrap_or_default() {
             "message_start" => {
                 let u = &v["message"]["usage"];
+                self.cache_read = u["cache_read_input_tokens"].as_i64().unwrap_or(0);
+                self.cache_written = u["cache_creation_input_tokens"].as_i64().unwrap_or(0);
                 self.usage.input_tokens = u["input_tokens"].as_i64().unwrap_or(0)
                     + u["cache_read_input_tokens"].as_i64().unwrap_or(0)
                     + u["cache_creation_input_tokens"].as_i64().unwrap_or(0);
@@ -221,6 +254,9 @@ impl StreamState {
             .filter(|b| !(b["type"] == "text" && b["text"].as_str().is_some_and(|t| t.is_empty())))
             .collect();
         out.push(ProviderEvent::Usage(std::mem::take(&mut self.usage)));
+        if self.cache_read + self.cache_written > 0 {
+            out.push(ProviderEvent::CacheUsage { read: self.cache_read, written: self.cache_written });
+        }
         out.push(ProviderEvent::Done { stop_reason: self.stop_reason.take(), raw_assistant: Some(Value::Array(raw)) });
         out
     }
@@ -346,5 +382,45 @@ mod tests {
         let bb = build_body(&budget);
         assert_eq!(bb["thinking"]["budget_tokens"], 30_000);
         assert!(bb["max_tokens"].as_u64().unwrap() > 30_000);
+    }
+
+    #[test]
+    fn cache_breakpoints_on_tools_system_stable_prefix_and_tail() {
+        let req = ChatRequest {
+            model: "claude-opus-5-5".into(),
+            system: "sys".into(),
+            messages: vec![ChatMessage::user("one"), ChatMessage::assistant("two"), ChatMessage::user("three"), ChatMessage::user("brief")],
+            tools: vec![
+                ToolSpec { name: "a".into(), description: "d".into(), parameters: json!({"type": "object"}) },
+                ToolSpec { name: "b".into(), description: "d".into(), parameters: json!({"type": "object"}) },
+            ],
+            stable_messages: Some(3),
+            ..Default::default()
+        };
+        let b = build_body(&req);
+        assert!(b["tools"][0].get("cache_control").is_none() && b["tools"][1]["cache_control"]["type"] == "ephemeral");
+        assert_eq!(b["system"][0]["cache_control"]["type"], "ephemeral");
+        // "three" and "brief" merge into one user turn; the stable prefix ends inside it, so the one
+        // breakpoint lands on its last block, and the first turns carry none.
+        let msgs = b["messages"].as_array().unwrap();
+        assert_eq!(msgs.len(), 3);
+        assert!(msgs[0]["content"][0].get("cache_control").is_none());
+        assert_eq!(msgs[2]["content"][1]["cache_control"]["type"], "ephemeral");
+        let breakpoints = b.to_string().matches("cache_control").count();
+        assert!(breakpoints <= 4, "{breakpoints} breakpoints");
+
+        // A stable prefix that ends before the tail gets its own breakpoint.
+        let req = ChatRequest { stable_messages: Some(2), ..req };
+        let b = build_body(&req);
+        assert_eq!(b["messages"][1]["content"][0]["cache_control"]["type"], "ephemeral");
+    }
+
+    #[test]
+    fn cache_usage_is_reported() {
+        let mut st = StreamState::default();
+        st.map(&json!({ "type": "message_start", "message": { "usage": { "input_tokens": 10, "cache_read_input_tokens": 900, "cache_creation_input_tokens": 50 } } }));
+        let evs = st.finish();
+        assert!(evs.contains(&ProviderEvent::CacheUsage { read: 900, written: 50 }));
+        assert!(evs.contains(&ProviderEvent::Usage(Usage { input_tokens: 960, output_tokens: 0 })));
     }
 }

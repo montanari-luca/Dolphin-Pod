@@ -17,6 +17,7 @@ type Meta = {
   plan?: { approved?: boolean };
   needsSetup?: boolean;
   notice?: string;
+  context?: { window?: number; peakTokens?: number; savedTokens?: number; compactions?: number; compactedMessages?: number; cacheRead?: number; cacheWritten?: number };
 };
 
 const MODE_LABEL: Record<string, string> = { quick: "Quick", learn: "Learn", plan: "Plan", implement: "Implement", answer: "Answer", internal: "Settings", clarify: "Clarify" };
@@ -255,11 +256,15 @@ function PlanBar({ message, approved, agent }: { message: Message; approved: boo
 function Footer({ message }: { message: Message }) {
   const [copied, setCopied] = useState(false);
   const tokens = (message.tokensIn ?? 0) + (message.tokensOut ?? 0);
+  const ctx = (message.meta as Meta | undefined)?.context;
   return (
     <div className="mt-1 flex h-5 items-center gap-3 text-[11px] text-faint opacity-0 transition-opacity group-hover:opacity-100">
       {message.workingMs != null && <span>{formatDuration(message.workingMs)}</span>}
       {message.thinkingMs != null && <span>thought {formatDuration(message.thinkingMs)}</span>}
       {tokens > 0 && <span>{formatTokens(tokens)} tokens</span>}
+      {(ctx?.cacheRead ?? 0) > 0 && <span title="Input tokens served from the provider's prompt cache">{formatTokens(ctx!.cacheRead!)} cached</span>}
+      {(ctx?.savedTokens ?? 0) > 0 && <span title="Tool output compressed before the model saw it. The full text stays retrievable.">−{formatTokens(ctx!.savedTokens!)} compressed</span>}
+      {(ctx?.compactions ?? 0) > 0 && <span title="Older context was summarized to stay within the model's window">compacted context</span>}
       <button
         className="inline-flex items-center gap-1 hover:text-fg"
         onClick={() => {

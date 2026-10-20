@@ -63,6 +63,10 @@ pub struct ModelRef {
     pub vision: bool,
     #[serde(default = "yes")]
     pub tools: bool,
+    /// Context window in tokens, copied from `ModelInfo` when the model was picked (None = unknown).
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub context_window: Option<u32>,
 }
 
 fn yes() -> bool {

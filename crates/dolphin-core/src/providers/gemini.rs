@@ -109,6 +109,7 @@ pub(crate) fn build_body(req: &ChatRequest) -> Value {
 pub(crate) struct StreamState {
     raw: Vec<Value>,
     usage: Usage,
+    cached: i64,
     finish: Option<String>,
     n_calls: usize,
 }
@@ -122,6 +123,7 @@ impl StreamState {
         }
         if let Some(u) = v.get("usageMetadata") {
             self.usage.input_tokens = u["promptTokenCount"].as_i64().unwrap_or(self.usage.input_tokens);
+            self.cached = u["cachedContentTokenCount"].as_i64().unwrap_or(self.cached);
             let out_tokens = u["candidatesTokenCount"].as_i64().unwrap_or(0) + u["thoughtsTokenCount"].as_i64().unwrap_or(0);
             if out_tokens > 0 {
                 self.usage.output_tokens = out_tokens;
@@ -169,10 +171,12 @@ impl StreamState {
     }
 
     pub fn finish(&mut self) -> Vec<ProviderEvent> {
-        vec![
-            ProviderEvent::Usage(std::mem::take(&mut self.usage)),
-            ProviderEvent::Done { stop_reason: self.finish.take(), raw_assistant: Some(Value::Array(std::mem::take(&mut self.raw))) },
-        ]
+        let mut out = vec![ProviderEvent::Usage(std::mem::take(&mut self.usage))];
+        if self.cached > 0 {
+            out.push(ProviderEvent::CacheUsage { read: self.cached, written: 0 });
+        }
+        out.push(ProviderEvent::Done { stop_reason: self.finish.take(), raw_assistant: Some(Value::Array(std::mem::take(&mut self.raw))) });
+        out
     }
 }
 

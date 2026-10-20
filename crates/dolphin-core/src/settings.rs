@@ -90,6 +90,10 @@ pub mod keys {
     pub const STALL_SECONDS: &str = "supervisor.stall_seconds";
     pub const AUTO_UPDATE_CHECK: &str = "updates.auto_check";
     pub const HISTORY_MESSAGES: &str = "context.history_messages";
+    pub const CONTEXT_AUTO_COMPACT: &str = "context.auto_compact";
+    pub const CONTEXT_COMPACT_AT: &str = "context.compact_at";
+    pub const CONTEXT_COMPRESS: &str = "context.compress_tools";
+    pub const CONTEXT_LOCAL_WINDOW: &str = "context.local_window";
     pub const PASTE_THRESHOLD: &str = "chat.paste_threshold";
     pub const SHOW_BRIEFS: &str = "routing.show_briefs";
     pub const WEB_ACCESS: &str = "web.access";
@@ -127,8 +131,16 @@ pub fn registry() -> Vec<SettingDef> {
         def(keys::STALL_SECONDS, "Stuck-agent timeout (seconds)", "If an agent produces nothing for this long, Roger checks on it.", Global,
             Int { min: 15, max: 1800 }, json!(120)),
         def(keys::AUTO_UPDATE_CHECK, "Check for updates automatically", "Check for a new version on launch and every few hours.", Global, Bool, json!(true)),
-        def(keys::HISTORY_MESSAGES, "Context window (messages)", "How many recent chat messages are sent to agents.", Global,
+        def(keys::HISTORY_MESSAGES, "Recent messages kept verbatim", "How many recent chat messages agents see word for word. When a chat grows past this, older messages are summarized (if automatic compaction is on) instead of dropped.", Global,
             Int { min: 4, max: 200 }, json!(40)),
+        def(keys::CONTEXT_AUTO_COMPACT, "Compact long conversations", "When a conversation closes in on a model's context window, summarize the older part so nothing important is lost and the model keeps working.", Global,
+            Bool, json!(true)),
+        def(keys::CONTEXT_COMPACT_AT, "Compact at (% of context window)", "How full the usable context window may get before compaction starts.", Global,
+            Int { min: 30, max: 98 }, json!(85)),
+        def(keys::CONTEXT_COMPRESS, "Compress tool output", "Shrink large tool results (logs, files, search hits, JSON) before the model sees them. The full text stays available to the model on request.", Global,
+            Bool, json!(true)),
+        def(keys::CONTEXT_LOCAL_WINDOW, "Local model context length (tokens)", "Context length requested from Ollama models (their own maximum is used if smaller). Higher values remember more but use more memory.", Global,
+            Int { min: 2048, max: 1_048_576 }, json!(32_768)),
         def(keys::PASTE_THRESHOLD, "Long paste threshold (characters)", "Pasted text longer than this becomes a .txt attachment.", Global,
             Int { min: 500, max: 200_000 }, json!(6000)),
         def(keys::SHOW_BRIEFS, "Show orchestration briefs", "Show Lincoln's brief and the routing decision on agent messages.", Global, Bool, json!(true)),

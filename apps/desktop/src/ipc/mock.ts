@@ -113,7 +113,7 @@ export function mockBackend(): Backend {
   const settings: Settings = {
     "appearance.theme": "system", "appearance.reduce_motion": false, "appearance.reduce_transparency": false,
     "cleanup.enabled": true, "cleanup.default_ttl_hours": 24, "preferences.custom_instructions": "", "utility.model": null,
-    "supervisor.stall_seconds": 120, "updates.auto_check": true, "context.history_messages": 40, "chat.paste_threshold": 6000,
+    "supervisor.stall_seconds": 120, "updates.auto_check": true, "context.history_messages": 40, "context.auto_compact": true, "context.compact_at": 85, "context.compress_tools": true, "context.local_window": 32768, "chat.paste_threshold": 6000,
     "routing.show_briefs": true, "web.access": true, "app.onboarded": false, "profile.display_name": "You",
   };
 

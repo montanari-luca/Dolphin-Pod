@@ -82,6 +82,9 @@ pub(crate) fn build_body(req: &ChatRequest, summaries: bool) -> Value {
             .map(|t| json!({ "type": "function", "name": t.name, "description": t.description, "parameters": t.parameters }))
             .collect::<Vec<_>>());
     }
+    if let Some(k) = &req.cache_key {
+        body["prompt_cache_key"] = json!(k);
+    }
     if let Some(n) = req.max_tokens {
         body["max_output_tokens"] = json!(n);
     }
@@ -133,6 +136,10 @@ impl StreamState {
                     input_tokens: r["usage"]["input_tokens"].as_i64().unwrap_or(0),
                     output_tokens: r["usage"]["output_tokens"].as_i64().unwrap_or(0),
                 }));
+                let cached = r["usage"]["input_tokens_details"]["cached_tokens"].as_i64().unwrap_or(0);
+                if cached > 0 {
+                    out.push(ProviderEvent::CacheUsage { read: cached, written: 0 });
+                }
                 let stop = r["incomplete_details"]["reason"].as_str().or(r["status"].as_str()).map(String::from);
                 out.push(ProviderEvent::Done { stop_reason: stop, raw_assistant: Some(r["output"].clone()) });
             }
@@ -239,5 +246,16 @@ mod tests {
         assert_eq!(b["reasoning"]["effort"], "low");
         assert_eq!(b["reasoning"]["summary"], "auto");
         assert!(build_body(&req, false)["reasoning"].get("summary").is_none());
+    }
+
+    #[test]
+    fn cache_key_and_cached_tokens() {
+        let req = ChatRequest { model: "gpt-5.2".into(), cache_key: Some("dolphin-pod:c:a".into()), ..Default::default() };
+        assert_eq!(build_body(&req, true)["prompt_cache_key"], "dolphin-pod:c:a");
+        assert!(build_body(&ChatRequest::default(), true).get("prompt_cache_key").is_none());
+        let mut st = StreamState::default();
+        let evs = st.map(&json!({ "type": "response.completed", "response": { "status": "completed", "output": [],
+            "usage": { "input_tokens": 2000, "output_tokens": 5, "input_tokens_details": { "cached_tokens": 1536 } } } }));
+        assert!(evs.contains(&ProviderEvent::CacheUsage { read: 1536, written: 0 }));
     }
 }

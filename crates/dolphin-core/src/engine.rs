@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use crate::attachments;
+use crate::context::{self, ContextSettings, RETRIEVE_TOOL, RunContext, tokens, window};
 use crate::core::Core;
 use crate::error::{CoreError, Result};
 use crate::events::{AgentActivity, CoreEvent};
@@ -20,7 +21,11 @@ use crate::settings::{self, keys};
 use crate::tools;
 use crate::util::{now_ms, truncate};
 
+mod ctx;
+
 const MAX_TOOL_STEPS: usize = 40;
+/// How often one run may recover from a provider rejecting the prompt as too long.
+const MAX_OVERFLOW_RETRIES: u32 = 2;
 const FLUSH_EVERY: Duration = Duration::from_millis(40);
 
 /// Everything one user turn needs, gathered once.
@@ -389,50 +394,6 @@ impl Core {
             .join("\n")
     }
 
-    /// Chat history as seen by `agent`: its own turns are assistant turns; everyone else is quoted.
-    fn history_for(&self, turn: &Turn, agent: &Agent, exclude: &str, vision: bool) -> Result<Vec<ChatMessage>> {
-        let limit = settings::get_int(&self.db, keys::HISTORY_MESSAGES).max(4) as usize;
-        let msgs = self.db.list_messages(&turn.chat.id, limit)?;
-        let user_ids: Vec<&str> = msgs.iter().filter(|m| m.agent_id.is_none()).map(|m| m.id.as_str()).collect();
-        let recent_users: Vec<&str> = user_ids.iter().rev().take(3).copied().collect();
-        let mut out: Vec<ChatMessage> = Vec::new();
-        for m in &msgs {
-            if m.id == exclude || matches!(m.kind, MessageKind::Ack | MessageKind::Notice) {
-                continue;
-            }
-            if m.content.trim().is_empty() && m.attachments.is_empty() {
-                continue;
-            }
-            let cm = match &m.agent_id {
-                Some(id) if id == &agent.id => {
-                    let mut text = m.content.clone();
-                    for a in &m.attachments {
-                        text.push_str(&format!("\n[generated image: {}]", a.name));
-                    }
-                    ChatMessage::assistant(text)
-                }
-                None => {
-                    let mut parts = vec![Part::Text(m.content.clone())];
-                    let send_files = recent_users.contains(&m.id.as_str());
-                    for a in &m.attachments {
-                        if send_files {
-                            parts.extend(attachments::to_parts(a, vision));
-                        } else {
-                            parts.push(Part::Text(format!("[earlier attachment: {}]", a.name)));
-                        }
-                    }
-                    ChatMessage { role: Role::User, parts, tool_calls: vec![], tool_call_id: None, tool_name: None, raw: None }
-                }
-                Some(_) => ChatMessage::user(format!("[{}]: {}", self.author_name(&turn.all_agents, m), m.content)),
-            };
-            out.push(cm);
-        }
-        if out.first().is_some_and(|m| m.role != Role::User) {
-            out.insert(0, ChatMessage::user("(earlier conversation)"));
-        }
-        Ok(out)
-    }
-
     // ---------------------------------------------------------------- agent run
 
     async fn run_agent(self: &Arc<Self>, turn: &Turn, agent: &Agent, task: AgentTask) -> Result<Message> {
@@ -504,6 +465,11 @@ impl Core {
         if is_image_agent && model.tools {
             tool_specs.push(tools::image_tool());
         }
+        let ctx_cfg = ContextSettings::load(&self.db);
+        let mut rc = RunContext::new(context::Budget::new(window::resolve(&model, cfg.kind, ctx_cfg.local_window), ctx_cfg.compact_at), ctx_cfg);
+        if ctx_cfg.compress_tools && model.tools {
+            tool_specs.push(context::compress::retrieve_spec());
+        }
         let user_name = settings::get_string(&self.db, keys::DISPLAY_NAME).trim().to_string();
         let system = prompts::agent_system(&prompts::AgentPromptInput {
             agent,
@@ -513,13 +479,25 @@ impl Core {
             permission: level,
             has_image_tool: is_image_agent,
             has_web: web,
-            preferences: &turn.prefs,
+            // Preferences change with every request; they go after the history so the system prompt and
+            // the history stay identical between turns and provider prompt caches keep hitting.
+            preferences: &[],
             user_name: Some(user_name.as_str()).filter(|n| !n.is_empty() && !n.eq_ignore_ascii_case("you")),
         });
-        let mut messages = self.history_for(turn, agent, &msg.id, model.vision)?;
+        let summarizer = if ctx_cfg.auto_compact { self.summarizer_for(agent, &ctx_cfg) } else { None };
+        let fixed_tokens = tokens::text(&system) + tokens::specs(&tool_specs);
+        let mut messages = self.prepare_history(turn, agent, &mut rc, fixed_tokens, &msg.id, model.vision, summarizer.as_ref()).await?;
+        let mut volatile = 0usize;
         if let Some(b) = &task.brief {
             messages.push(ChatMessage::user(b.clone()));
+            volatile += 1;
         }
+        if !turn.prefs.is_empty() {
+            let list: String = turn.prefs.iter().map(|p| format!("- {}\n", p.trim())).collect();
+            messages.push(ChatMessage::user(format!("The user's preferences that apply to this request:\n{list}")));
+            volatile += 1;
+        }
+        let mut run_start = messages.len();
         let mut req = ChatRequest {
             model: model.model_id.clone(),
             system,
@@ -530,6 +508,9 @@ impl Core {
             json_mode: false,
             web_search: native_search,
             want_reasoning: true,
+            cache_key: Some(format!("dolphin-pod:{}:{}", turn.chat.id, agent.id)),
+            stable_messages: Some(run_start.saturating_sub(volatile)),
+            context_window: Some(rc.budget.window),
         };
         stats.input_chars = req.system.len() + req.messages.iter().map(|m| m.text_content().len()).sum::<usize>();
 
@@ -542,12 +523,25 @@ impl Core {
         let mut stalled_once = false;
         let mut last_sig: Option<(String, usize)> = None;
         let mut generated_image = false;
+        let mut overflow_retries = 0u32;
 
         for _step in 0..MAX_TOOL_STEPS {
+            self.fit_context(turn, agent, &mut rc, &mut req, &mut run_start, volatile, summarizer.as_ref(), false).await?;
             stats.requests += 1;
-            let mut stream = tokio::select! {
-                s = provider.stream_chat(req.clone()) => s?,
+            let opened = tokio::select! {
+                s = provider.stream_chat(req.clone()) => s,
                 _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
+            };
+            let mut stream = match opened {
+                Ok(s) => s,
+                // The provider says the prompt is too long: squeeze harder and try again.
+                Err(CoreError::Provider(m)) if window::is_overflow_error(&m) && overflow_retries < MAX_OVERFLOW_RETRIES => {
+                    overflow_retries += 1;
+                    rc.stats.retries += 1;
+                    self.fit_context(turn, agent, &mut rc, &mut req, &mut run_start, volatile, summarizer.as_ref(), true).await?;
+                    continue;
+                }
+                Err(e) => return Err(e),
             };
             let mut calls: Vec<ToolCall> = Vec::new();
             let mut raw = None;
@@ -557,6 +551,7 @@ impl Core {
             let mut last_event = Instant::now();
             let mut stalled = false;
             let mut first_text_in_step = true;
+            let mut overflowed = false;
 
             loop {
                 let wait = if pending.0.is_empty() && pending.1.is_empty() { Duration::from_secs(2) } else { FLUSH_EVERY };
@@ -608,10 +603,19 @@ impl Core {
                     ProviderEvent::Usage(u) => {
                         stats.tokens_in += u.input_tokens;
                         stats.tokens_out += u.output_tokens;
+                        rc.calibrate(u.input_tokens);
+                    }
+                    ProviderEvent::CacheUsage { read, written } => {
+                        rc.stats.cache_read += read;
+                        rc.stats.cache_written += written;
                     }
                     ProviderEvent::Done { raw_assistant, .. } => raw = raw_assistant,
                     ProviderEvent::Error(e) => {
                         self.flush(msg, &mut pending);
+                        if window::is_overflow_error(&e) && overflow_retries < MAX_OVERFLOW_RETRIES && step_text.is_empty() && calls.is_empty() {
+                            overflowed = true;
+                            break;
+                        }
                         return Err(CoreError::Provider(e));
                     }
                 }
@@ -621,6 +625,13 @@ impl Core {
                 }
             }
             self.flush(msg, &mut pending);
+
+            if overflowed {
+                overflow_retries += 1;
+                rc.stats.retries += 1;
+                self.fit_context(turn, agent, &mut rc, &mut req, &mut run_start, volatile, summarizer.as_ref(), true).await?;
+                continue;
+            }
 
             if stalled {
                 // Roger checks on a silent agent once; a second stall ends the run.
@@ -643,6 +654,9 @@ impl Core {
                 continue;
             }
 
+            if rc.stats.is_interesting() {
+                msg.meta["context"] = rc.stats.to_json();
+            }
             if calls.is_empty() {
                 break;
             }
@@ -659,6 +673,12 @@ impl Core {
                         &format!("{} seems to be stuck repeating “{}”. I stopped them; try rephrasing or giving more detail.", agent.name, tools::summarize(&call.name, &call.arguments)),
                         json!({ "notice": "loop" }))?;
                     return Ok(());
+                }
+                if call.name == RETRIEVE_TOOL {
+                    // Served from memory: no workspace, no permission, nothing to log.
+                    self.activity(&turn.chat.id, &agent.id, AgentActivity::UsingTool, Some(tools::summarize(&call.name, &call.arguments)));
+                    req.messages.push(ChatMessage::tool_result(call, rc.store.retrieve(&call.arguments)));
+                    continue;
                 }
                 let level = self.db.grant(&turn.chat.id, &agent.id)?.level;
                 let summary = tools::summarize(&call.name, &call.arguments);
@@ -692,6 +712,7 @@ impl Core {
                     list.push(json!({ "name": call.name, "summary": summary, "ok": ok, "allowed": allowed, "error": (!ok).then(|| truncate(&output, 300)) }));
                 }
                 self.save_message(msg)?;
+                let output = if ok { rc.shrink_tool_output(&call.name, output) } else { output };
                 req.messages.push(ChatMessage::tool_result(call, output));
             }
         }

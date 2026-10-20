@@ -89,7 +89,7 @@ async fn main() {
     assert!(info.reasoning, "{model} must be a reasoning model");
     for a in core.list_agents().unwrap() {
         let mut a = a;
-        a.model = Some(ModelRef { provider_id: cfg.id.clone(), model_id: model.clone(), effort: Some(EffortValue::Toggle(true)), vision: info.vision, tools: info.tools });
+        a.model = Some(ModelRef { provider_id: cfg.id.clone(), model_id: model.clone(), effort: Some(EffortValue::Toggle(true)), vision: info.vision, tools: info.tools, context_window: info.context_window });
         core.update_agent(a).unwrap();
     }
 

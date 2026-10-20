@@ -133,6 +133,7 @@ pub fn summarize(name: &str, args: &Value) -> String {
         "web_search" => format!("Searched the web for \"{}\"", truncate(&a("query"), 60)),
         "fetch_page" => format!("Opened {}", truncate(&a("url"), 80)),
         "generate_image" => "Generated an image".into(),
+        "context_retrieve" => "Re-read a compressed result".into(),
         other => format!("Called {other}"),
     }
 }

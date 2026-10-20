@@ -63,7 +63,11 @@ pub(crate) fn build_body(kind: ProviderKind, req: &ChatRequest) -> Value {
     if !req.system.is_empty() {
         messages.push(json!({ "role": "system", "content": req.system }));
     }
-    for m in &req.messages {
+    let mut stable_at: Option<usize> = None;
+    for (i, m) in req.messages.iter().enumerate() {
+        if req.stable_messages == Some(i) {
+            stable_at = messages.len().checked_sub(1);
+        }
         match m.role {
             Role::User => messages.push(json!({ "role": "user", "content": content_value(&m.parts) })),
             Role::Assistant => {
@@ -82,6 +86,14 @@ pub(crate) fn build_body(kind: ProviderKind, req: &ChatRequest) -> Value {
                 "tool_call_id": m.tool_call_id,
                 "content": m.text_content(),
             })),
+        }
+    }
+    if kind == ProviderKind::Openrouter && req.model.starts_with("anthropic/") {
+        // Anthropic models behind OpenRouter only cache at explicit breakpoints: system, end of the
+        // stable history and end of the request.
+        let last = messages.len().checked_sub(1);
+        for i in [(!req.system.is_empty()).then_some(0), stable_at, last].into_iter().flatten() {
+            mark_cacheable(&mut messages[i]);
         }
     }
     let mut body = json!({ "model": req.model, "messages": messages, "stream": true });
@@ -128,6 +140,25 @@ pub(crate) fn build_body(kind: ProviderKind, req: &ChatRequest) -> Value {
     body
 }
 
+/// Turn a message's text content into a content-part array whose last text part carries a cache breakpoint.
+fn mark_cacheable(msg: &mut Value) {
+    if msg["role"] == "tool" {
+        return;
+    }
+    let parts = match msg["content"].take() {
+        Value::String(t) if !t.trim().is_empty() => vec![json!({ "type": "text", "text": t })],
+        Value::Array(a) => a,
+        other => {
+            msg["content"] = other;
+            return;
+        }
+    };
+    msg["content"] = json!(parts);
+    if let Some(last) = msg["content"].as_array_mut().and_then(|a| a.iter_mut().rev().find(|p| p["type"] == "text")) {
+        last["cache_control"] = json!({ "type": "ephemeral" });
+    }
+}
+
 /// Stateful mapper for one streamed completion.
 #[derive(Default)]
 pub(crate) struct ChunkMapper {
@@ -135,6 +166,7 @@ pub(crate) struct ChunkMapper {
     calls: BTreeMap<u64, (String, String, String)>,
     finish: Option<String>,
     usage: Option<Usage>,
+    cache: Option<(i64, i64)>,
 }
 
 impl ChunkMapper {
@@ -150,6 +182,10 @@ impl ChunkMapper {
                 input_tokens: u["prompt_tokens"].as_i64().unwrap_or(0),
                 output_tokens: u["completion_tokens"].as_i64().unwrap_or(0),
             });
+            let d = &u["prompt_tokens_details"];
+            let read = d["cached_tokens"].as_i64().or(u["prompt_cache_hit_tokens"].as_i64()).unwrap_or(0);
+            let written = d["cache_write_tokens"].as_i64().unwrap_or(0);
+            self.cache = (read + written > 0).then_some((read, written));
         }
         let Some(choice) = v["choices"].get(0) else { return out };
         let delta = &choice["delta"];
@@ -239,6 +275,9 @@ impl ChunkMapper {
         }
         if let Some(u) = self.usage.take() {
             out.push(ProviderEvent::Usage(u));
+        }
+        if let Some((read, written)) = self.cache.take() {
+            out.push(ProviderEvent::CacheUsage { read, written });
         }
         out.push(ProviderEvent::Done { stop_reason: self.finish.take(), raw_assistant: None });
         out
@@ -417,5 +456,35 @@ mod tests {
         assert!(build_body(ProviderKind::Deepseek, &req).get("reasoning_effort").is_none());
         let budget = ChatRequest { model: "m".into(), effort: Some(EffortValue::Budget(4000)), ..Default::default() };
         assert_eq!(build_body(ProviderKind::Openrouter, &budget)["reasoning"]["max_tokens"], 4000);
+    }
+
+    #[test]
+    fn openrouter_anthropic_models_get_cache_breakpoints() {
+        use crate::providers::ChatMessage;
+        let req = ChatRequest {
+            model: "anthropic/claude-sonnet-5-5".into(),
+            system: "sys".into(),
+            messages: vec![ChatMessage::user("one"), ChatMessage::assistant("two"), ChatMessage::user("task")],
+            stable_messages: Some(2),
+            ..Default::default()
+        };
+        let b = build_body(ProviderKind::Openrouter, &req);
+        let m = b["messages"].as_array().unwrap();
+        assert_eq!(m[0]["content"][0]["cache_control"]["type"], "ephemeral", "system");
+        assert_eq!(m[2]["content"][0]["cache_control"]["type"], "ephemeral", "end of the stable history");
+        assert_eq!(m[3]["content"][0]["cache_control"]["type"], "ephemeral", "end of the request");
+        assert!(m[1]["content"].is_string(), "other turns stay plain strings");
+        // Other providers and models are untouched.
+        let plain = build_body(ProviderKind::Openrouter, &ChatRequest { model: "openai/gpt-5".into(), ..req.clone() });
+        assert!(!plain.to_string().contains("cache_control"));
+        assert!(!build_body(ProviderKind::Groq, &req).to_string().contains("cache_control"));
+    }
+
+    #[test]
+    fn cached_prompt_tokens_are_reported() {
+        let mut m = ChunkMapper::default();
+        m.map(&json!({ "choices": [], "usage": { "prompt_tokens": 3000, "completion_tokens": 10, "prompt_tokens_details": { "cached_tokens": 2048 } } }));
+        let evs = m.finish();
+        assert!(evs.contains(&ProviderEvent::CacheUsage { read: 2048, written: 0 }));
     }
 }

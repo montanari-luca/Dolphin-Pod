@@ -20,7 +20,10 @@ teaching) answer in shared chats. Every agent runs on the local or cloud reasoni
   Google Gemini, xAI, Mistral, DeepSeek, Groq, Together, Fireworks and Azure OpenAI. Only reasoning models
   are selectable, and the effort control adapts to each model.
 - **Streamed thinking** from every provider, full Markdown with code highlighting and math.
-- **Context efficiency**: only the relevant parts of your custom instructions are sent.
+- **Smart context handling**: conversations are compacted automatically before they fill a model's context window
+  (older messages become a saved summary, never silently dropped), large tool output (logs, files, search hits,
+  JSON) is compressed by content type with the full text one tool call away, and prompts are laid out for provider
+  prompt caching. Only the relevant parts of your custom instructions are sent.
 - **Housekeeping**: rolling 24-hour cleanup per chat, automations at a time of day, and Roger can change any
   setting from chat.
 - **Frosted glass UI** in dark and light, personalizable agent colors and gradients, hover cards with all-time
