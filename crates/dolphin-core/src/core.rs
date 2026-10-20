@@ -30,6 +30,7 @@ pub struct Core {
     pub(crate) chat_tokens: Mutex<HashMap<String, CancellationToken>>,
     pending_confirms: Mutex<HashMap<String, oneshot::Sender<bool>>>,
     pub(crate) sync: crate::sync::manager::SyncRuntime,
+    pub(crate) remote: crate::remote::RemoteRuntime,
 }
 
 pub type CoreRef = Arc<Core>;
@@ -56,6 +57,7 @@ impl Core {
             chat_tokens: Mutex::new(HashMap::new()),
             pending_confirms: Mutex::new(HashMap::new()),
             sync: Default::default(),
+            remote: Default::default(),
         }))
     }
 
@@ -237,15 +239,33 @@ impl Core {
     }
 
     pub(crate) fn insert_message(&self, m: &Message) -> Result<()> {
-        self.db.insert_message(m)?;
-        self.emit(CoreEvent::MessageCreated { message: m.clone() });
+        let m = self.mark_if_remote(m);
+        self.db.insert_message(&m)?;
+        self.emit(CoreEvent::MessageCreated { message: m.into_owned() });
         Ok(())
     }
 
     pub(crate) fn save_message(&self, m: &Message) -> Result<()> {
-        self.db.update_message(m)?;
-        self.emit(CoreEvent::MessageUpdated { message: m.clone() });
+        let m = self.mark_if_remote(m);
+        self.db.update_message(&m)?;
+        self.emit(CoreEvent::MessageUpdated { message: m.into_owned() });
         Ok(())
+    }
+
+    /// Everything written in a chat while a remote request runs there is marked remote, which is what lets it
+    /// sync to the requesting device while it is still streaming.
+    fn mark_if_remote<'a>(&self, m: &'a Message) -> std::borrow::Cow<'a, Message> {
+        if !self.remote.is_active(&m.chat_id) || m.meta.get("remote").and_then(Value::as_bool) == Some(true) {
+            return std::borrow::Cow::Borrowed(m);
+        }
+        let mut marked = m.clone();
+        match marked.meta.as_object_mut() {
+            Some(o) => {
+                o.insert("remote".into(), Value::Bool(true));
+            }
+            None => marked.meta = json!({ "remote": true }),
+        }
+        std::borrow::Cow::Owned(marked)
     }
 
     /// Post a finished message from an agent (Roger's replies, Lincoln's notices).

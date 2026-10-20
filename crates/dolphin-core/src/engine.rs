@@ -81,6 +81,41 @@ impl Core {
     }
 
     /// Approve a plan (button). Lincoln escalates the planner to full permissions and starts the work.
+    /// Run a message that another device asked for. The sender already shows the message under `message_id`
+    /// (possibly already synced here), so that id is reused. The returned handle finishes with the pipeline.
+    pub(crate) async fn send_message_remote(
+        self: &Arc<Self>,
+        chat_id: &str,
+        text: &str,
+        message_id: &str,
+        meta: Value,
+    ) -> Result<tokio::task::JoinHandle<()>> {
+        let chat = self.db.get_chat(chat_id)?;
+        let agents = self.db.list_agents()?;
+        self.remote.begin(&chat.id);
+        let msg = match self.db.get_message(message_id) {
+            Ok(m) => m,
+            Err(_) => {
+                let mut m = self.new_message(&chat.id, None, MessageKind::Text, MessageStatus::Done, text.trim_end());
+                m.id = message_id.to_string();
+                m.mentions = mention::parse(text, &agents);
+                m.meta = meta;
+                if let Err(e) = self.insert_message(&m) {
+                    self.remote.end(&chat.id);
+                    return Err(e);
+                }
+                m
+            }
+        };
+        let core = self.clone();
+        Ok(tokio::spawn(async move {
+            core.clone().pipeline(chat.clone(), msg).await;
+            // Let the last updates sync before the flag drops.
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            core.remote.end(&chat.id);
+        }))
+    }
+
     pub async fn approve_plan(self: &Arc<Self>, message_id: &str) -> Result<()> {
         let plan = self.db.get_message(message_id)?;
         if plan.kind != MessageKind::Plan {

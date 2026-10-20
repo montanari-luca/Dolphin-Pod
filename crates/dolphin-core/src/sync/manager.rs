@@ -84,6 +84,8 @@ pub struct DeviceInfo {
     pub kind: String,
     /// The device accepts remote-control requests.
     pub remote: bool,
+    /// This device lets that device control it (only meaningful on the device that decides).
+    pub authorized: bool,
     #[ts(type = "number")]
     pub last_seen: i64,
     pub revoked: bool,
@@ -102,6 +104,8 @@ struct Inner {
     revoked: bool,
     locked: bool,
     next_attempt_ms: i64,
+    /// While a remote request is running, sync every tick instead of every 30 s.
+    hurry_until_ms: i64,
     name: Option<String>,
     platform: Option<String>,
     kind: Option<String>,
@@ -127,6 +131,16 @@ impl SyncRuntime {
 
     pub(crate) fn wake(&self) {
         self.wake.notify_one();
+    }
+
+    /// Sync at the fastest pace for the next `ms`.
+    pub(crate) fn hurry_for(&self, ms: i64) {
+        self.inner.lock().unwrap().hurry_until_ms = now_ms() + ms;
+        self.wake();
+    }
+
+    fn hurrying(&self) -> bool {
+        now_ms() < self.inner.lock().unwrap().hurry_until_ms
     }
 }
 
@@ -403,29 +417,42 @@ impl Core {
             let i = self.sync.inner.lock().unwrap();
             (i.platform.clone().unwrap_or_else(|| std::env::consts::OS.into()), i.kind.clone().unwrap_or_else(|| "desktop".into()))
         };
-        let info = json!({ "name": self.device_name(), "platform": platform, "kind": kind, "remote": self.remote_enabled() });
+        let pk = self.identity().map(|i| i.public_key()).unwrap_or_default();
+        let info = json!({ "name": self.device_name(), "platform": platform, "kind": kind, "remote": self.remote_enabled(), "pk": pk });
         let id = self.db.device_id().to_string();
         let sealed = engine.key().seal(&device_aad(&id), info.to_string().as_bytes())?;
         Ok(DeviceRow { id, last_seen_ms: now_ms(), revoked: false, sealed })
     }
 
-    pub async fn sync_devices(&self) -> Result<Vec<DeviceInfo>> {
+    /// Every device row with its decrypted description.
+    pub(crate) async fn sync_devices_raw(&self) -> Result<Vec<(String, Value)>> {
         let (engine, backend) = (self.sync.engine(), self.sync.backend());
         let (Some(engine), Some(backend)) = (engine, backend) else { return Ok(vec![]) };
+        Ok(backend
+            .list_devices()
+            .await?
+            .into_iter()
+            .map(|row| {
+                let info: Value = engine.key().open(&device_aad(&row.id), &row.sealed).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or(Value::Null);
+                (row.id, info)
+            })
+            .collect())
+    }
+
+    pub async fn sync_devices(&self) -> Result<Vec<DeviceInfo>> {
+        let Some(backend) = self.sync.backend() else { return Ok(vec![]) };
+        let infos: HashMap<String, Value> = self.sync_devices_raw().await?.into_iter().collect();
+        let authorized = self.remote_authorized_ids();
         let mut out = Vec::new();
         for row in backend.list_devices().await? {
-            let info: Value = engine
-                .key()
-                .open(&device_aad(&row.id), &row.sealed)
-                .ok()
-                .and_then(|b| serde_json::from_slice(&b).ok())
-                .unwrap_or(Value::Null);
+            let info = infos.get(&row.id).cloned().unwrap_or(Value::Null);
             out.push(DeviceInfo {
                 this_device: row.id == self.db.device_id(),
                 name: info["name"].as_str().unwrap_or("Unknown device").into(),
                 platform: info["platform"].as_str().unwrap_or("").into(),
                 kind: info["kind"].as_str().unwrap_or("desktop").into(),
                 remote: info["remote"].as_bool().unwrap_or(false),
+                authorized: authorized.contains(&row.id),
                 last_seen: row.last_seen_ms,
                 revoked: row.revoked,
                 id: row.id,
@@ -433,6 +460,10 @@ impl Core {
         }
         out.sort_by(|a, b| b.last_seen.cmp(&a.last_seen));
         Ok(out)
+    }
+
+    pub(crate) async fn sync_device_name(&self, id: &str) -> String {
+        self.sync_devices().await.ok().and_then(|d| d.into_iter().find(|d| d.id == id)).map_or_else(|| "A paired device".into(), |d| d.name)
     }
 
     /// Remove a device from the pod. It stops receiving and sending updates the next time it syncs.
@@ -627,7 +658,7 @@ pub fn spawn(core: CoreRef) {
                 continue;
             }
             let local_changes = core.db.sync_pending_count().unwrap_or(0) > 0;
-            if !local_changes && now_ms() - last_full < POLL.as_millis() as i64 {
+            if !local_changes && !core.sync.hurrying() && now_ms() - last_full < POLL.as_millis() as i64 {
                 continue;
             }
             last_full = now_ms();

@@ -8,4 +8,8 @@ kind: string,
 /**
  * The device accepts remote-control requests.
  */
-remote: boolean, lastSeen: number, revoked: boolean, thisDevice: boolean, };
+remote: boolean, 
+/**
+ * This device lets that device control it (only meaningful on the device that decides).
+ */
+authorized: boolean, lastSeen: number, revoked: boolean, thisDevice: boolean, };

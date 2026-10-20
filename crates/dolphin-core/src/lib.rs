@@ -15,6 +15,7 @@ pub mod model;
 pub mod permissions;
 pub mod preferences;
 pub mod providers;
+pub mod remote;
 pub mod router;
 pub mod sandbox;
 pub mod scheduler;

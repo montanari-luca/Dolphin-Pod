@@ -23,6 +23,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("schema.sql"),
     include_str!("migration_0002_user_roles.sql"),
     include_str!("migration_0003_sync.sql"),
+    include_str!("migration_0004_remote.sql"),
 ];
 
 #[derive(Clone)]
@@ -137,6 +138,38 @@ impl Db {
             "INSERT INTO sync_blobs (attachment_id, uploaded_at) VALUES (?1, ?2) ON CONFLICT DO NOTHING",
             rusqlite::params![attachment_id, crate::util::now_ms()],
         )?;
+        Ok(())
+    }
+
+    /// Remember a remote request id. Returns false if it was already seen (a replay).
+    pub fn remote_mark_seen(&self, id: &str) -> Result<bool> {
+        let now = crate::util::now_ms();
+        let conn = self.conn();
+        conn.execute("DELETE FROM remote_seen WHERE seen_at < ?1", [now - 24 * 3_600_000])?;
+        Ok(conn.execute("INSERT INTO remote_seen (id, seen_at) VALUES (?1, ?2) ON CONFLICT (id) DO NOTHING", rusqlite::params![id, now])? == 1)
+    }
+
+    /// Write a message that arrived over the nearby-network channel. It is not queued for sync (the desktop
+    /// that wrote it syncs it); when the same message arrives through sync it simply agrees.
+    pub fn ingest_message(&self, m: &crate::model::Message) -> Result<()> {
+        use crate::db::{enum_str, to_json};
+        let conn = self.conn();
+        conn.execute("UPDATE sync_ctl SET applying = 1", [])?;
+        let r = conn.execute(
+            "INSERT INTO messages (id, chat_id, agent_id, kind, status, content, reasoning, error, mentions, meta,
+               thinking_ms, working_ms, tokens_in, tokens_out, created_at, updated_at, device_id)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)
+             ON CONFLICT (id) DO UPDATE SET status = excluded.status, content = excluded.content, reasoning = excluded.reasoning,
+               error = excluded.error, meta = excluded.meta, thinking_ms = excluded.thinking_ms, working_ms = excluded.working_ms,
+               tokens_in = excluded.tokens_in, tokens_out = excluded.tokens_out, updated_at = excluded.updated_at",
+            rusqlite::params![
+                m.id, m.chat_id, m.agent_id, enum_str(&m.kind), enum_str(&m.status), m.content, m.reasoning, m.error,
+                to_json(&m.mentions), to_json(&m.meta), m.thinking_ms, m.working_ms, m.tokens_in, m.tokens_out,
+                m.created_at, crate::util::now_ms(), "lan"
+            ],
+        );
+        conn.execute("UPDATE sync_ctl SET applying = 0", [])?;
+        r?;
         Ok(())
     }
 
