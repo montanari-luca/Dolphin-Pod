@@ -8,7 +8,7 @@ struct ProvidersView: View {
     var body: some View {
         List {
             Section {
-                ForEach(model.providers) { p in
+                ForEach(model.providers.filter { $0.kind != "on_device" }) { p in
                     Button { editing = p } label: {
                         HStack(spacing: 12) {
                             Image(systemName: isLocal(p) ? "desktopcomputer" : "cloud.fill").foregroundStyle(.secondary).frame(width: 24)

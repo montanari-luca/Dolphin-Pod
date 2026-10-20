@@ -103,6 +103,9 @@ struct Inner {
     offline: bool,
     revoked: bool,
     locked: bool,
+    /// The first sync (join or create) has finished. Until then no ordinary round may run: it would push this
+    /// device's fresh defaults before it has read the pod, and they would win over the pod's own values.
+    initialized: bool,
     next_attempt_ms: i64,
     /// While a remote request is running, sync every tick instead of every 30 s.
     hurry_until_ms: i64,
@@ -263,6 +266,7 @@ impl Core {
         i.host = Some(host);
         i.locked = false;
         i.revoked = false;
+        i.initialized = self.db.meta_get(META_INITIALIZED).ok().flatten().as_deref() == Some(remote_name(url).as_str());
         i.error = None;
         i.offline = false;
         i.next_attempt_ms = 0;
@@ -272,6 +276,7 @@ impl Core {
     fn persist(&self, url: &str, key: &DataKey) -> Result<()> {
         self.secrets.set(KEY_URL, url.trim())?;
         self.secrets.set(KEY_DATA_KEY, &key.to_base64())?;
+        self.db.meta_set("sync.remote", &remote_name(url))?;
         self.db.meta_set(META_ENABLED, "1")?;
         Ok(())
     }
@@ -490,6 +495,7 @@ impl Core {
                 self.emit_applied(&report.applied);
                 if let Some(remote) = initialized {
                     let _ = self.db.meta_set(META_INITIALIZED, remote);
+                    self.sync.inner.lock().unwrap().initialized = true;
                 }
                 if let (Some(engine), Some(backend)) = (self.sync.engine(), self.sync.backend()) {
                     if let Ok(row) = self.heartbeat_row(&engine) {
@@ -542,9 +548,12 @@ impl Core {
         let engine = self.sync.engine().ok_or_else(|| CoreError::invalid("sync is not set up on this device"))?;
         let _guard = self.sync.cycle.lock().await;
         self.set_syncing(true);
-        let result = engine.cycle().await;
+        // A device that hasn't finished its first sync reads the pod before it writes anything.
+        let first = !self.sync.inner.lock().unwrap().initialized;
+        let result = if first { engine.join().await } else { engine.cycle().await };
         let failed = result.as_ref().err().map(|e| e.to_string());
-        self.finish_cycle(result, None).await;
+        let mark = first.then(|| self.db.meta_get("sync.remote").ok().flatten().unwrap_or_default());
+        self.finish_cycle(result, mark.as_deref()).await;
         failed.map_or(Ok(()), |e| Err(CoreError::provider(e)))
     }
 
@@ -650,10 +659,19 @@ pub fn spawn(core: CoreRef) {
                 _ = core.sync.wake.notified() => { last_full = 0; }
             }
             let Some(engine) = core.sync.engine() else { continue };
-            let (retry_after, syncing) = {
+            let (retry_after, syncing, initialized) = {
                 let i = core.sync.inner.lock().unwrap();
-                (i.next_attempt_ms, i.syncing)
+                (i.next_attempt_ms, i.syncing, i.initialized)
             };
+            if !initialized {
+                // The first sync failed or was interrupted: try it again before anything else.
+                if !syncing && now_ms() >= retry_after && core.sync.cycle.try_lock().is_ok() {
+                    let remote = core.db.meta_get("sync.remote").ok().flatten().unwrap_or_default();
+                    let core2 = core.clone();
+                    tokio::spawn(async move { core2.run_initial(false, &remote).await });
+                }
+                continue;
+            }
             if syncing || now_ms() < retry_after {
                 continue;
             }

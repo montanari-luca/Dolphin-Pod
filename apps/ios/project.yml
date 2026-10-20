@@ -9,6 +9,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
+    OTHER_SWIFT_FLAGS: "-enable-bare-slash-regex"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: ""

@@ -47,6 +47,7 @@ final class AppModel {
     var lastRoute: (path: String, target: String)?
 
     var runTarget: RunTarget = .phone
+    var selectedChatId: String?
     var version = ""
 
     @ObservationIgnored private(set) var client: CoreClient?
@@ -68,12 +69,16 @@ final class AppModel {
             await client.subscribe(EventBridge { [weak self] ev in
                 Task { @MainActor in self?.apply(ev) }
             })
+            client.setOnDeviceBackend(OnDeviceEngine())
             await client.start()
             try reloadAll()
             ready = true
             bonjour.onChange = { [weak self] in self?.objectWillChangeHack() }
             bonjour.start()
             startRefreshLoop()
+            #if DEBUG
+            Task { await DebugAutomation.run(self) }
+            #endif
         } catch {
             bootError = "\(error)"
         }

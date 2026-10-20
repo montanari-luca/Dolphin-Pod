@@ -45,6 +45,7 @@ struct AgentModelPicker: View {
 
     private var cloudProviders: [ProviderConfig] {
         model.providers.filter { p in
+            if p.kind == "on_device" { return true }
             guard p.enabled, let kind = model.providerKinds.first(where: { $0.kind == p.kind }) else { return false }
             return !kind.isLocal || (kind.kind == "custom_openai" && !p.baseUrl.contains("localhost") && !p.baseUrl.contains("127.0.0.1"))
         }
@@ -66,10 +67,11 @@ struct AgentModelPicker: View {
                 ForEach(cloudProviders) { p in
                     Button { Task { await load(p) } } label: {
                         HStack {
+                            if p.kind == "on_device" { Image(systemName: "iphone") }
                             Text(p.name).foregroundStyle(.primary)
                             Spacer()
                             if providerId == p.id { Image(systemName: "checkmark").foregroundStyle(Brand.blue) }
-                            if !p.hasKey { Tag(text: "no key", tint: .orange) }
+                            if !p.hasKey && p.kind != "on_device" { Tag(text: "no key", tint: .orange) }
                         }
                     }
                 }

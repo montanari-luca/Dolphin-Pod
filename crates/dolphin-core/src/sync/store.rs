@@ -163,6 +163,13 @@ impl Db {
         Ok(())
     }
 
+    /// Forget which records changed locally. A device joining a pod does this before it reads the pod: its
+    /// untouched defaults must not be stamped as fresh edits that then beat the pod's real values.
+    pub fn sync_clear_dirty(&self) -> Result<()> {
+        self.conn().execute("DELETE FROM sync_dirty", [])?;
+        Ok(())
+    }
+
     pub fn sync_dirty_provider_ids(&self) -> Result<Vec<String>> {
         let conn = self.conn();
         let mut st = conn.prepare("SELECT id FROM sync_dirty WHERE kind = ?1")?;

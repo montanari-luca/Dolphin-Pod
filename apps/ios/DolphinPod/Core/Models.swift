@@ -312,7 +312,7 @@ struct ProviderConfig: Codable, Identifiable, Equatable {
     var updatedAt: Int64
 }
 
-struct ProviderKindInfo: Codable, Identifiable, Equatable {
+struct ProviderKindInfo: Codable, Identifiable, Equatable, Hashable {
     var kind: String
     var label: String
     var isLocal: Bool
@@ -369,9 +369,9 @@ enum CoreEvent {
               let type = try? JSONDecoder().decode(Envelope.self, from: data).type,
               let raw = try? JSONDecoder().decode(JSON.self, from: data) else { return .other }
         let dec = JSONDecoder()
-        func sub<T: Decodable>(_ key: String, as: T.Type) -> T? {
+        func sub<T: Decodable>(_ key: String, as type: T.Type) -> T? {
             guard let d = try? JSONEncoder().encode(raw[key]) else { return nil }
-            return try? dec.decode(T.self, from: d)
+            return try? dec.decode(type, from: d)
         }
         switch type {
         case "messageCreated": if let m = sub("message", as: Message.self) { return .messageCreated(m) }

@@ -191,6 +191,8 @@ impl SyncEngine {
     /// First sync on a device that joins an existing pod: take what the pod has, then offer what this
     /// device has that the pod doesn't. (Seeded defaults the pod already holds are not overwritten.)
     pub async fn join(&self) -> Result<CycleReport> {
+        // Whatever is on this device now counts as a starting point, not as an edit: the pod is read first.
+        self.db.sync_clear_dirty()?;
         let pulled = self.pull().await?;
         self.db.sync_mark_all_dirty()?;
         let mut report = self.cycle().await?;

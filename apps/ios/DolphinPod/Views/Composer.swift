@@ -58,7 +58,6 @@ struct Composer: View {
             .padding(.horizontal, 12)
         }
         .padding(.top, 6).padding(.bottom, 8)
-        .background(.bar.opacity(0.001))
         .onChange(of: photoItems) { _, items in Task { await stage(items) } }
         .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }

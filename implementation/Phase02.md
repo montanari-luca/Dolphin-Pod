@@ -54,6 +54,9 @@ device (`usage` primary key `agent_id, device_id`) and summed on read; cleanup w
       device. v0.1 supports Postgres only. The URL is stored in the keychain, and changing it is a sensitive setting.
 - [x] Scheduling: push on local change (debounced), pull on launch, on focus and every 30 s. Use `LISTEN/NOTIFY`
       for near-real-time where the provider allows it.
+  *(Deliberately not done: a held-open LISTEN connection keeps a NeonDB compute awake around the clock and burns the
+  free tier. Polling every 30 s, plus a 2 s cadence while local changes or a remote request are pending, keeps the
+  database free to scale to zero.)*
 - [x] Attachments: encrypted blobs in a `blobs` table (chunked) or provider object storage; lazy download on view.
 - [x] Tests: property tests for merge convergence (random op orders on 3 replicas converge), tombstone vs late
       edit, usage summation, clock skew.

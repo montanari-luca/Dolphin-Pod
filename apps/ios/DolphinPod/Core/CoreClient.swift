@@ -20,6 +20,8 @@ final class CoreClient: @unchecked Sendable {
 
     // MARK: lifecycle
 
+    func setOnDeviceBackend(_ backend: OnDeviceBackend) { core.setOnDeviceBackend(backend: backend) }
+
     func start() async { await core.start() }
 
     func subscribe(_ listener: EventListener) async { await core.subscribe(listener: listener) }

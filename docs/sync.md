@@ -53,6 +53,8 @@ and your passphrase.
 ## Good to know
 
 - Sync polls instead of holding a connection open, so a NeonDB project can still scale to zero when you are idle.
+- The database keeps every change as a small sealed record. There is no compaction yet, so it grows slowly with use;
+  clearing chats removes the text but not the (tiny) tombstone records.
 - Local models (Ollama, LM Studio, localhost endpoints) sync as configuration but are unreachable from a phone. They
   show as unavailable there and the agent uses its iPhone model instead.
 - Only one device runs each automation: the one it was created on (change this on the automation).

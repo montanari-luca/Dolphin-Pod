@@ -68,7 +68,23 @@ CREATE TABLE IF NOT EXISTS dolphinpod.blobs (
 
 pub struct PostgresBackend {
     config: Config,
+    /// Extra CA certificates (PEM) to trust, from the libpq-style `sslrootcert=` URL parameter. Useful for a
+    /// self-hosted Postgres with a private CA; managed databases such as NeonDB use public roots.
+    root_cert: Option<Vec<u8>>,
     client: Mutex<Option<Arc<Client>>>,
+}
+
+/// Pull `sslrootcert=` out of the URL (tokio-postgres would reject it as an unknown option).
+fn split_root_cert(url: &str) -> Result<(String, Option<Vec<u8>>)> {
+    let Ok(mut parsed) = url::Url::parse(url) else { return Ok((url.to_string(), None)) };
+    let pairs: Vec<(String, String)> = parsed.query_pairs().map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+    let Some((_, path)) = pairs.iter().find(|(k, _)| k == "sslrootcert") else { return Ok((url.to_string(), None)) };
+    let pem = std::fs::read(path).map_err(|e| CoreError::invalid(format!("cannot read the certificate file '{path}': {e}")))?;
+    parsed.set_query(None);
+    for (k, v) in pairs.iter().filter(|(k, _)| k != "sslrootcert") {
+        parsed.query_pairs_mut().append_pair(k, v);
+    }
+    Ok((parsed.to_string(), Some(pem)))
 }
 
 fn pg_err(e: tokio_postgres::Error) -> CoreError {
@@ -79,13 +95,14 @@ fn pg_err(e: tokio_postgres::Error) -> CoreError {
 impl PostgresBackend {
     /// `url` is a `postgres://` or `postgresql://` connection string.
     pub fn new(url: &str) -> Result<Self> {
-        let config: Config = url.trim().parse().map_err(|e: tokio_postgres::Error| {
+        let (url, root_cert) = split_root_cert(url.trim())?;
+        let config: Config = url.parse().map_err(|e: tokio_postgres::Error| {
             CoreError::invalid(format!("that is not a valid Postgres connection URL ({e})"))
         })?;
         if config.get_hosts().is_empty() {
             return Err(CoreError::invalid("the connection URL has no host"));
         }
-        Ok(Self { config, client: Mutex::new(None) })
+        Ok(Self { config, root_cert, client: Mutex::new(None) })
     }
 
     async fn connect(&self) -> Result<Client> {
@@ -100,6 +117,13 @@ impl PostgresBackend {
         }
         let mut roots = rustls::RootCertStore::empty();
         roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        if let Some(pem) = &self.root_cert {
+            use rustls::pki_types::{CertificateDer, pem::PemObject};
+            for cert in CertificateDer::pem_slice_iter(pem) {
+                let cert = cert.map_err(|e| CoreError::invalid(format!("bad certificate file: {e}")))?;
+                roots.add(cert).map_err(|e| CoreError::invalid(format!("bad certificate: {e}")))?;
+            }
+        }
         let tls = rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
             .with_safe_default_protocol_versions()
             .map_err(|e| CoreError::provider(e.to_string()))?
@@ -140,7 +164,9 @@ fn sealed_of(nonce: Vec<u8>, ciphertext: Vec<u8>) -> Sealed {
 #[async_trait]
 impl SyncBackend for PostgresBackend {
     async fn init(&self) -> Result<()> {
-        self.client().await?.batch_execute(SCHEMA).await.map_err(pg_err)
+        // Two devices setting up a fresh database at the same moment must not trip over each other.
+        let sql = format!("SELECT pg_advisory_lock(7467000);\n{SCHEMA}\nSELECT pg_advisory_unlock(7467000);");
+        self.client().await?.batch_execute(&sql).await.map_err(pg_err)
     }
 
     async fn get_account(&self) -> Result<Option<Account>> {

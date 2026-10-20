@@ -157,3 +157,51 @@ fn only_postgres_urls_are_accepted() {
     assert!(manager::make_backend("mysql://x").is_err());
     assert!(manager::make_backend("postgres://u:p@ep-cool-123.us-east-2.aws.neon.tech/neondb?sslmode=require").is_ok());
 }
+
+#[tokio::test]
+async fn edits_made_while_the_first_sync_is_running_still_reach_a_device_that_joins_later() {
+    use dolphin_core::model::{ModelRef, ProviderConfig, ProviderKind};
+    let (da, db_) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let (a, b) = (core(&da), core(&db_));
+    manager::spawn(a.clone());
+    manager::spawn(b.clone());
+    let url = "memory://core-test-race";
+    a.sync_setup(url, "race passphrase").await.unwrap();
+    // Straight away, while the creating sync is still running: add a provider and give every agent a model.
+    let p = a
+        .save_provider(ProviderConfig { id: String::new(), kind: ProviderKind::Ollama, name: "Local".into(), base_url: String::new(), extra: json!({}), enabled: true, has_key: false, updated_at: 0 }, None)
+        .unwrap();
+    for mut agent in a.list_agents().unwrap() {
+        agent.model = Some(ModelRef { provider_id: p.id.clone(), model_id: "m".into(), effort: None, vision: false, tools: true, context_window: None });
+        a.update_agent(agent).unwrap();
+    }
+    until("A has pushed everything", || a.sync_status().pending == 0 && a.sync_status().state == SyncState::Idle).await;
+    b.sync_setup(url, "race passphrase").await.unwrap();
+    until("B shows the models", || b.list_agents().unwrap().iter().all(|x| x.model.is_some())).await;
+    until("B settles", || b.sync_status().pending == 0).await;
+    // And B's own join must not have pushed anything that takes them away again.
+    a.sync_wake();
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    assert!(a.list_agents().unwrap().iter().all(|x| x.model.is_some()), "A still has its models");
+    assert!(b.list_agents().unwrap().iter().all(|x| x.model.is_some()), "B still has the models");
+}
+
+#[tokio::test]
+async fn a_device_keeps_its_own_edits_made_during_its_first_sync() {
+    use dolphin_core::model::{ModelRef, ProviderConfig, ProviderKind};
+    let da = tempfile::tempdir().unwrap();
+    let a = core(&da);
+    manager::spawn(a.clone());
+    a.sync_setup("memory://core-test-alone", "alone passphrase").await.unwrap();
+    let p = a
+        .save_provider(ProviderConfig { id: String::new(), kind: ProviderKind::Ollama, name: "Local".into(), base_url: String::new(), extra: json!({}), enabled: true, has_key: false, updated_at: 0 }, None)
+        .unwrap();
+    for mut agent in a.list_agents().unwrap() {
+        agent.model = Some(ModelRef { provider_id: p.id.clone(), model_id: "m".into(), effort: None, vision: false, tools: true, context_window: None });
+        a.update_agent(agent).unwrap();
+    }
+    until("A idle", || a.sync_status().pending == 0 && a.sync_status().state == SyncState::Idle).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let with = a.list_agents().unwrap().iter().filter(|x| x.model.is_some()).count();
+    assert_eq!(with, 10, "only {with} of 10 agents kept their model");
+}

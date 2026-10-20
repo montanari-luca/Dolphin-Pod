@@ -642,3 +642,21 @@ async fn postgres_meets_the_contract_and_two_devices_converge_through_it() {
     assert_eq!(a_db.sync_snapshot().unwrap(), b_db.sync_snapshot().unwrap());
     client.batch_execute("DROP SCHEMA dolphinpod CASCADE").await.unwrap();
 }
+
+/// TLS against a Postgres with a private CA: `DOLPHIN_TEST_PG_TLS_URL=postgres://u@localhost/db?sslmode=require&sslrootcert=/path/ca.pem`.
+#[tokio::test]
+#[ignore = "needs DOLPHIN_TEST_PG_TLS_URL"]
+async fn postgres_over_tls_verifies_the_server_certificate() {
+    let url = std::env::var("DOLPHIN_TEST_PG_TLS_URL").expect("DOLPHIN_TEST_PG_TLS_URL");
+    let ok = super::postgres::PostgresBackend::new(&url).unwrap();
+    ok.init().await.expect("connects with the right CA");
+    let client = ok.client_for_tests().await;
+    let ssl: bool = client.query_one("SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()", &[]).await.unwrap().get(0);
+    assert!(ssl, "the connection is encrypted");
+    client.batch_execute("DROP SCHEMA IF EXISTS dolphinpod CASCADE").await.unwrap();
+
+    // Without the private CA the same server is refused: certificates are really being verified.
+    let bare = url.split("&sslrootcert=").next().unwrap().split("sslrootcert=").next().unwrap().trim_end_matches(['?', '&']).to_string();
+    let untrusted = super::postgres::PostgresBackend::new(&bare).unwrap();
+    assert!(untrusted.init().await.is_err(), "an unknown CA must not be trusted");
+}

@@ -2,9 +2,10 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
-    @State private var selection: String?
 
     var body: some View {
+        @Bindable var model = model
+        let selection = $model.selectedChatId
         ZStack(alignment: .top) {
             if let error = model.bootError {
                 BootErrorView(message: error)
@@ -12,11 +13,11 @@ struct RootView: View {
                 ZStack { PodBackground(); ProgressView() }
             } else {
                 NavigationSplitView {
-                    ChatListView(selection: $selection)
+                    ChatListView(selection: selection)
                 } detail: {
-                    if let id = selection { ChatView(chatId: id).id(id) } else { Welcome() }
+                    if let id = selection.wrappedValue { ChatView(chatId: id).id(id) } else { Welcome() }
                 }
-                .onAppear { if selection == nil, UIDevice.current.userInterfaceIdiom != .phone { selection = model.chats.first?.id } }
+                .onAppear { if selection.wrappedValue == nil, UIDevice.current.userInterfaceIdiom != .phone { selection.wrappedValue = model.chats.first?.id } }
             }
             ToastStack()
         }
