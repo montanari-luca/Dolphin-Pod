@@ -77,23 +77,23 @@ device (`usage` primary key `agent_id, device_id`) and summed on read; cleanup w
 
 ## 3. iOS app (`apps/ios/`, SwiftUI)
 
-- [ ] UniFFI bindings for `dolphin-core`. Expose `Core` as a UniFFI object and core events as a callback
+- [x] UniFFI bindings for `dolphin-core`. Expose `Core` as a UniFFI object and core events as a callback
       interface, and build an XCFramework (`aarch64-apple-ios`, `aarch64-apple-ios-sim` targets are installed).
       Add a `crates/dolphin-ffi` wrapper crate so `dolphin-core` stays free of FFI attributes.
-- [ ] Xcode project consuming the XCFramework; the AppIcon set (light, dark, tinted) is already generated in
+- [x] Xcode project consuming the XCFramework; the AppIcon set (light, dark, tinted) is already generated in
       `apps/ios/DolphinPod/Assets.xcassets/AppIcon.appiconset`.
-- [ ] Scope: chat-only by default. The chat list, chat view (Markdown, streamed thinking, agent colors and
+- [x] Scope: chat-only by default. The chat list, chat view (Markdown, streamed thinking, agent colors and
       gradients, @mention autocomplete), attachments from Photos and Files, and a settings sheet for sync, the
       passphrase and per-agent iOS model overrides.
-- [ ] Design: the same frosted look with SwiftUI materials (`.ultraThinMaterial`), dark and light. The agent card
+- [x] Design: the same frosted look with SwiftUI materials (`.ultraThinMaterial`), dark and light. The agent card
       (job, all-time tokens, thinking and working time) opens on long-press or tap, since phones have no hover.
-- [ ] Local model capability checks: synced local models (Ollama or LM Studio on a PC) are unreachable or too big
+- [x] Local model capability checks: synced local models (Ollama or LM Studio on a PC) are unreachable or too big
       on the phone, so they show as unavailable and the agent falls back to its iOS override. On-device inference
       uses MLX (or llama.cpp) with a curated list of small reasoning models; cloud and custom endpoints always work.
-- [ ] Keychain storage for keys and the passphrase cache. Background refresh triggers sync.
-- [ ] Updates: read the `ios` link from the same manifest (TestFlight or App Store URL).
-- [ ] About screen with MintFlow and Luca Montanari credits.
-- [ ] Verify early: direct Postgres from iOS (TLS, background limits). If it's a problem, use Neon's HTTP/WebSocket
+- [x] Keychain storage for keys and the passphrase cache. Background refresh triggers sync.
+- [x] Updates: read the `ios` link from the same manifest (TestFlight or App Store URL).
+- [x] About screen with MintFlow and Luca Montanari credits.
+- [x] Verify early: direct Postgres from iOS (TLS, background limits). If it's a problem, use Neon's HTTP/WebSocket
       SQL interface or a minimal relay.
 
 ## 4. Remote control (iPhone → desktop)
@@ -116,3 +116,19 @@ device (`usage` primary key `agent_id, device_id`) and summed on read; cleanup w
 1. Hosting the Neon project: the owner's account or each user's own (the default implies each user brings a URL)?
 2. On-device iOS models: which curated list ships first (size and quality trade-off)?
 3. App Store vs TestFlight-only for the first iOS release.
+
+## Status notes (end of this pass)
+
+Built and verified: crypto, sync engine (400 random 3-replica schedules converge), Postgres relay (local server, plain and
+TLS with a private CA), sync manager, remote control (cloud and LAN, including fallback and refusals), desktop UI, the
+UniFFI crate, the SwiftUI app, and a live run: iPhone simulator joined a pod, sent a request to a desktop running
+`qwen3.5:2b` through the cloud and received the streamed answer.
+
+Not verified here, to do on real hardware or accounts:
+- Real NeonDB (TLS roots, pooler behavior, cold starts): only a local Postgres was available.
+- Bonjour discovery on iOS (`NWBrowser` + Local Network permission). The Rust advertiser and the LAN channel are tested;
+  the simulator run used the cloud path.
+- On-device inference: the core seam is tested with a fake runtime; the MLX glue (`OnDevice/OnDeviceEngine.swift`) is
+  guarded by `canImport(MLXLLM)` and not compiled in by default (MLX needs a device).
+- Background refresh on a device, and running from a signed build.
+- Carry-overs 2 and 3 (eyeball the native window and icons; live run against a cloud provider).

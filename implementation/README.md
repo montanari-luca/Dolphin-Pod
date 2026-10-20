@@ -3,7 +3,7 @@
 > **Delete this whole `implementation/` directory once every phase below is complete.** These are working
 > build plans, not product documentation; lasting docs belong in `docs/` and the app READMEs.
 
-Phases 0 (foundation) and 1 (desktop app) are done; Phase 3 (website) is built with a few carry-overs. What is left:
+Phases 0 (foundation) and 1 (desktop app) are done; Phase 2 is built (see its status notes for what still needs real hardware or accounts); Phase 3 (website) is built with a few carry-overs. What is left:
 
 | File | Phase | Scope |
 | --- | --- | --- |
