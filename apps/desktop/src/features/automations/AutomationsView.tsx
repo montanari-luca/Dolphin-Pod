@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { CalendarClock, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { Automation } from "@dolphin/shared";
+import type { Automation, DeviceInfo } from "@dolphin/shared";
 import { Button, Dialog, EmptyState, Field, Input, Select, Switch, Textarea } from "@/components/ui";
 import { errorText } from "@/ipc/api";
 import { chatIcon } from "@/lib/chatIcons";
@@ -112,7 +112,13 @@ export function AutomationsView() {
 
 function AutomationEditor({ initial, onClose, onSave, onDelete }: { initial: Automation; onClose: () => void; onSave: (a: Automation) => void; onDelete: () => void }) {
   const chats = useApp((s) => s.chats);
+  const api = useApp((s) => s.api);
+  const syncOn = useApp((s) => s.sync && s.sync.state !== "off" && s.sync.state !== "revoked");
   const [a, setA] = useState(initial);
+  const [devices, setDevices] = useState<DeviceInfo[]>([]);
+  useEffect(() => {
+    if (syncOn) void api?.syncDevices().then(setDevices).catch(() => {});
+  }, [api, syncOn]);
   const toggleDay = (d: number) => setA({ ...a, weekdays: a.weekdays.includes(d) ? a.weekdays.filter((x) => x !== d) : [...a.weekdays, d].sort() });
   return (
     <Dialog
@@ -156,6 +162,15 @@ function AutomationEditor({ initial, onClose, onSave, onDelete }: { initial: Aut
             ))}
           </div>
         </Field>
+        {syncOn && devices.length > 1 && (
+          <Field label="Runs on" hint="With sync, every device sees this automation but only this one fires it.">
+            <Select value={a.runnerDeviceId ?? devices.find((d) => d.thisDevice)?.id ?? ""} onChange={(e) => setA({ ...a, runnerDeviceId: e.target.value })}>
+              {devices.filter((d) => !d.revoked && d.kind === "desktop").map((d) => (
+                <option key={d.id} value={d.id}>{d.name}{d.thisDevice ? " (this computer)" : ""}</option>
+              ))}
+            </Select>
+          </Field>
+        )}
       </div>
     </Dialog>
   );

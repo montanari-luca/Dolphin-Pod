@@ -18,7 +18,7 @@ impl Core {
     pub(super) fn summarizer_for(&self, agent: &Agent, cfg: &ContextSettings) -> Option<Summarizer> {
         let m = settings::get_model(&self.db, keys::UTILITY_MODEL)
             .filter(|m| self.provider(&m.provider_id).is_ok())
-            .or_else(|| agent.model.clone())?;
+            .or_else(|| self.model_for(agent))?;
         let (pcfg, provider) = self.provider(&m.provider_id).ok()?;
         let win = window::resolve(&m, pcfg.kind, cfg.local_window);
         Some(Summarizer {

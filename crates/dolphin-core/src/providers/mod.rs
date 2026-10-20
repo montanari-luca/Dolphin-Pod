@@ -3,6 +3,7 @@
 mod anthropic;
 mod gemini;
 pub mod image;
+pub mod ondevice;
 mod ollama;
 mod openai_compat;
 mod openai_responses;

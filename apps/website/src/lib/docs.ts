@@ -3,7 +3,7 @@ import { getCollection, type CollectionEntry } from "astro:content";
 export type DocEntry = CollectionEntry<"docs">;
 
 /** Sidebar order. Anything not listed is appended alphabetically so new docs are never lost. */
-const ORDER = ["getting-started", "agents", "providers", "routing", "permissions", "profile"];
+const ORDER = ["getting-started", "agents", "providers", "routing", "permissions", "sync", "remote-control", "ios", "profile"];
 const GUIDE_ORDER = ["guides/ollama", "guides/lm-studio", "guides/openrouter"];
 
 export const isGuide = (e: DocEntry) => e.id.startsWith("guides/");

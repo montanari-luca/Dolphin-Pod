@@ -332,6 +332,7 @@ export function mockBackend(): Backend {
     ],
     syncRevokeDevice: async () => {},
     setDeviceName: async (name) => setSync({ deviceName: name }),
+    fetchAttachment: async () => "",
     remoteSettings: async () => ({ enabled: remoteOn, lanPort: remoteOn ? 49152 : null }),
     async setRemoteEnabled(enabled) {
       remoteOn = enabled;

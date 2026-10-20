@@ -24,6 +24,9 @@ teaching) answer in shared chats. Every agent runs on the local or cloud reasoni
   (older messages become a saved summary, never silently dropped), large tool output (logs, files, search hits,
   JSON) is compressed by content type with the full text one tool call away, and prompts are laid out for provider
   prompt caching. Only the relevant parts of your custom instructions are sent.
+- **Sync and iPhone**: optional end-to-end encrypted sync (Postgres/NeonDB, your passphrase, a recovery key) keeps
+  chats, agents, settings and provider keys identical across desktops and the iPhone app, and the iPhone can start
+  work on a desktop, nearby over Wi-Fi or through the cloud.
 - **Housekeeping**: rolling 24-hour cleanup per chat, automations at a time of day, and Roger can change any
   setting from chat.
 - **Frosted glass UI** in dark and light, personalizable agent colors and gradients, hover cards with all-time
@@ -52,6 +55,7 @@ pnpm dev
 | Regenerate all icons          | `python3 packages/brand/scripts/make_icons.py`                  |
 | Live run against Ollama       | `cargo run -p dolphin-core --example live_ollama -- qwen3.5:2b` |
 | Release build                 | `pnpm --filter @dolphin/desktop tauri build`                    |
+| iOS framework and app         | see [apps/ios](apps/ios/README.md)                              |
 | Website dev server            | `pnpm --filter @dolphin/website dev`                            |
 | Website production build      | `pnpm --filter @dolphin/website build`                          |
 

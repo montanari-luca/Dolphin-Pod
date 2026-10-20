@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { AlertTriangle, ArrowRight, CheckCircle2, ChevronRight, CircleSlash, ClipboardList, Copy, FileText, Loader2, Settings2, ShieldAlert, Sparkles, Wrench } from "lucide-react";
-import { memo, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import type { Agent, Attachment, Message } from "@dolphin/shared";
 import { AgentAvatar, AgentHoverCard, AgentName } from "@/components/agent";
 import { UserAvatar, UserHoverCard, UserNameText } from "@/components/user";
@@ -182,15 +182,30 @@ function ToolActivity({ tools }: { tools: NonNullable<Meta["tools"]> }) {
   );
 }
 
-function Attachments({ items }: { items: Attachment[] }) {
+/** Files that came from another device are downloaded the first time they are shown. */
+function useLocalPaths(items: Attachment[]): Attachment[] {
   const api = useApp((s) => s.api);
+  const [fetched, setFetched] = useState<Record<string, string>>({});
+  useEffect(() => {
+    for (const a of items) {
+      if (a.path || fetched[a.id] !== undefined || !api) continue;
+      setFetched((f) => ({ ...f, [a.id]: "" }));
+      api.fetchAttachment(a.id).then((path) => setFetched((f) => ({ ...f, [a.id]: path }))).catch(() => {});
+    }
+  }, [items, api, fetched]);
+  return items.map((a) => (a.path ? a : { ...a, path: fetched[a.id] ?? "" }));
+}
+
+function Attachments({ items: remoteItems }: { items: Attachment[] }) {
+  const api = useApp((s) => s.api);
+  const items = useLocalPaths(remoteItems);
   const [zoom, setZoom] = useState<Attachment | null>(null);
   return (
     <div className="mt-2 flex flex-wrap gap-2">
       {items.map((a) =>
         a.kind === "image" ? (
           <button key={a.id} onClick={() => setZoom(a)} className="overflow-hidden rounded-md border border-line hover:border-line-strong transition-ui">
-            <img src={api?.fileUrl(a.path)} alt={a.name} className="max-h-72 max-w-[420px] object-cover" loading="lazy" />
+            {a.path ? <img src={api?.fileUrl(a.path)} alt={a.name} className="max-h-72 max-w-[420px] object-cover" loading="lazy" /> : <div className="flex h-24 w-40 items-center justify-center text-[11.5px] text-faint">Downloading…</div>}
           </button>
         ) : (
           <button key={a.id} onClick={() => api?.revealPath(a.path)} className="flex items-center gap-2 rounded-md border border-line bg-hover/50 px-2.5 py-1.5 text-left hover:bg-hover transition-ui">

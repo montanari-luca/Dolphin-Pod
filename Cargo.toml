@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/dolphin-core", "apps/desktop/src-tauri"]
+members = ["crates/dolphin-core", "crates/dolphin-ffi", "apps/desktop/src-tauri"]
 
 [workspace.package]
 version = "0.1.0"
@@ -14,3 +14,9 @@ codegen-units = 1
 lto = true
 opt-level = 3
 strip = true
+
+# The iOS static libraries: release speed without the very slow fat LTO link.
+[profile.mobile]
+inherits = "release"
+lto = "thin"
+codegen-units = 8

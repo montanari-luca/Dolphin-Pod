@@ -73,6 +73,16 @@ fn yes() -> bool {
     true
 }
 
+/// Which kind of device this core runs on. Decides which agent model applies and which providers can be reached.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum Platform {
+    #[default]
+    Desktop,
+    Ios,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
@@ -91,10 +101,12 @@ pub enum ProviderKind {
     Together,
     Fireworks,
     AzureOpenai,
+    /// A model running on the phone itself (iOS only; a virtual provider that is never stored or synced).
+    OnDevice,
 }
 
 impl ProviderKind {
-    pub const ALL: [ProviderKind; 14] = [
+    pub const ALL: [ProviderKind; 15] = [
         ProviderKind::Ollama,
         ProviderKind::LmStudio,
         ProviderKind::CustomOpenai,
@@ -109,6 +121,7 @@ impl ProviderKind {
         ProviderKind::Together,
         ProviderKind::Fireworks,
         ProviderKind::AzureOpenai,
+        ProviderKind::OnDevice,
     ];
 
     pub fn as_str(&self) -> &'static str {
@@ -127,6 +140,7 @@ impl ProviderKind {
             ProviderKind::Together => "together",
             ProviderKind::Fireworks => "fireworks",
             ProviderKind::AzureOpenai => "azure_openai",
+            ProviderKind::OnDevice => "on_device",
         }
     }
 
@@ -150,11 +164,12 @@ impl ProviderKind {
             ProviderKind::Together => "Together AI",
             ProviderKind::Fireworks => "Fireworks AI",
             ProviderKind::AzureOpenai => "Azure OpenAI",
+            ProviderKind::OnDevice => "On this iPhone",
         }
     }
 
     pub fn is_local(&self) -> bool {
-        matches!(self, ProviderKind::Ollama | ProviderKind::LmStudio | ProviderKind::CustomOpenai)
+        matches!(self, ProviderKind::Ollama | ProviderKind::LmStudio | ProviderKind::CustomOpenai | ProviderKind::OnDevice)
     }
 
     pub fn needs_key(&self) -> bool {
@@ -177,6 +192,7 @@ impl ProviderKind {
             ProviderKind::Together => "https://api.together.xyz/v1",
             ProviderKind::Fireworks => "https://api.fireworks.ai/inference/v1",
             ProviderKind::AzureOpenai => "https://YOUR-RESOURCE.openai.azure.com/openai/v1",
+            ProviderKind::OnDevice => "",
         }
     }
 }

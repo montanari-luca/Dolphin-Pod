@@ -257,7 +257,7 @@ impl Core {
             "mode": if approving { "implement" } else { decision.mode.as_str() },
             "intent": if approving { "plan approved".to_string() } else { decision.intent.clone() },
             "targets": target_names,
-            "source": decision.source, "needsSetup": roger.model.is_none(), "error": err,
+            "source": decision.source, "needsSetup": self.model_for(&roger).is_none(), "error": err,
         }});
         self.save_message(&ack_msg)?;
 
@@ -384,7 +384,7 @@ impl Core {
     // ---------------------------------------------------------------- model plumbing
 
     fn model_handle(&self, agent: &Agent, want_reasoning: bool) -> Result<ModelHandle> {
-        let m = agent.model.as_ref().ok_or_else(|| CoreError::invalid(format!("{} has no model yet", agent.name)))?;
+        let m = self.model_for(agent).ok_or_else(|| CoreError::invalid(self.no_model_reason(agent)))?;
         let (_, provider) = self.provider(&m.provider_id)?;
         Ok((provider, ChatRequest { model: m.model_id.clone(), effort: m.effort.clone(), want_reasoning, ..Default::default() }))
     }
@@ -483,7 +483,7 @@ impl Core {
     }
 
     async fn run_agent_inner(self: &Arc<Self>, turn: &Turn, agent: &Agent, task: &AgentTask, msg: &mut Message, stats: &mut RunStats) -> Result<()> {
-        let model = agent.model.clone().ok_or_else(|| CoreError::invalid(format!("{} has no model yet", agent.name)))?;
+        let model = self.model_for(agent).ok_or_else(|| CoreError::invalid(self.no_model_reason(agent)))?;
         let (cfg, provider) = self.provider(&model.provider_id)?;
         let workspace = turn.chat.workspace_path.clone().filter(|p| std::path::Path::new(p).is_dir());
         let level = self.db.grant(&turn.chat.id, &agent.id)?.level;

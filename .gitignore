@@ -11,3 +11,8 @@ apps/desktop/src-tauri/gen/
 xcuserdata/
 DerivedData/
 .astro/
+
+# iOS build outputs (regenerate with apps/ios/scripts/build-xcframework.sh)
+apps/ios/Frameworks/
+apps/ios/Generated/
+apps/ios/DolphinPod.xcodeproj/

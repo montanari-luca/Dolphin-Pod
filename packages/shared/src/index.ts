@@ -21,6 +21,7 @@ export type { ModelInfo } from "./generated/ModelInfo";
 export type { ModelRef } from "./generated/ModelRef";
 export type { PermissionGrant } from "./generated/PermissionGrant";
 export type { PermissionLevel } from "./generated/PermissionLevel";
+export type { Platform } from "./generated/Platform";
 export type { ProviderConfig } from "./generated/ProviderConfig";
 export type { ProviderKind } from "./generated/ProviderKind";
 export type { ProviderKindInfo } from "./generated/ProviderKindInfo";

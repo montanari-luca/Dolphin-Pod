@@ -31,6 +31,8 @@ pub struct Core {
     pending_confirms: Mutex<HashMap<String, oneshot::Sender<bool>>>,
     pub(crate) sync: crate::sync::manager::SyncRuntime,
     pub(crate) remote: crate::remote::RemoteRuntime,
+    platform: Mutex<Platform>,
+    on_device: Mutex<Option<Arc<dyn crate::providers::ondevice::OnDeviceRuntime>>>,
 }
 
 pub type CoreRef = Arc<Core>;
@@ -58,6 +60,8 @@ impl Core {
             pending_confirms: Mutex::new(HashMap::new()),
             sync: Default::default(),
             remote: Default::default(),
+            platform: Mutex::new(Platform::Desktop),
+            on_device: Mutex::new(None),
         }))
     }
 
@@ -112,6 +116,84 @@ impl Core {
         if let Some(tx) = self.pending_confirms.lock().unwrap().remove(id) {
             let _ = tx.send(accepted);
         }
+    }
+
+    // ---------------------------------------------------------------- platform
+
+    pub fn set_platform(&self, platform: Platform) {
+        *self.platform.lock().unwrap() = platform;
+    }
+
+    /// Plug in the runtime that runs small models on this device (the iOS app does this at launch).
+    pub fn set_on_device_runtime(&self, runtime: Arc<dyn crate::providers::ondevice::OnDeviceRuntime>) {
+        *self.on_device.lock().unwrap() = Some(runtime);
+    }
+
+    fn on_device_runtime(&self) -> Option<Arc<dyn crate::providers::ondevice::OnDeviceRuntime>> {
+        self.on_device.lock().unwrap().clone()
+    }
+
+    /// The virtual "On this iPhone" provider, present only while a runtime is registered.
+    fn on_device_config(&self) -> Option<ProviderConfig> {
+        self.on_device_runtime()?;
+        Some(ProviderConfig {
+            id: crate::providers::ondevice::ON_DEVICE_PROVIDER_ID.into(),
+            kind: ProviderKind::OnDevice,
+            name: ProviderKind::OnDevice.label().into(),
+            base_url: String::new(),
+            extra: Value::Null,
+            enabled: true,
+            has_key: false,
+            updated_at: 0,
+        })
+    }
+
+    /// A provider's config, including the virtual on-device one.
+    fn provider_config(&self, id: &str) -> Result<ProviderConfig> {
+        if id == crate::providers::ondevice::ON_DEVICE_PROVIDER_ID {
+            return self.on_device_config().ok_or_else(|| CoreError::NotFound("on-device models are not available here".into()));
+        }
+        self.db.get_provider(id)
+    }
+
+    pub fn platform(&self) -> Platform {
+        *self.platform.lock().unwrap()
+    }
+
+    /// Whether a model's provider can be reached from this device. A PC's Ollama or LM Studio (or any
+    /// localhost endpoint) is unreachable from a phone; cloud providers work everywhere.
+    pub fn model_usable_here(&self, m: &ModelRef) -> bool {
+        let Ok(cfg) = self.provider_config(&m.provider_id) else { return false };
+        if self.platform() == Platform::Desktop {
+            return cfg.kind != ProviderKind::OnDevice;
+        }
+        match cfg.kind {
+            ProviderKind::Ollama | ProviderKind::LmStudio => false,
+            ProviderKind::CustomOpenai => !is_loopback(&cfg.base_url),
+            _ => true,
+        }
+    }
+
+    /// The model an agent uses on this device. On the desktop that is its model; on iOS the agent's iOS override
+    /// comes first and its desktop model is used only if it can be reached from a phone.
+    pub fn model_for(&self, agent: &Agent) -> Option<ModelRef> {
+        if self.platform() == Platform::Desktop {
+            return agent.model.clone();
+        }
+        [&agent.ios_model, &agent.model].into_iter().flatten().find(|m| self.model_usable_here(m)).cloned()
+    }
+
+    #[doc(hidden)]
+    pub fn no_model_reason_for_tests(&self, agent: &Agent) -> String {
+        self.no_model_reason(agent)
+    }
+
+    /// Why an agent has no model on this device, in words for the user.
+    pub(crate) fn no_model_reason(&self, agent: &Agent) -> String {
+        if self.platform() == Platform::Ios && agent.model.is_some() && agent.ios_model.is_none() {
+            return format!("{}'s model runs on your computer. Pick an iPhone model for {} in Settings → Agents.", agent.name, agent.name);
+        }
+        format!("{} has no model yet", agent.name)
     }
 
     // ---------------------------------------------------------------- agents
@@ -284,16 +366,22 @@ impl Core {
     }
 
     pub fn list_providers(&self) -> Result<Vec<ProviderConfig>> {
-        Ok(self.db.list_providers()?.into_iter().map(|p| self.with_key_flag(p)).collect())
+        let mut all: Vec<ProviderConfig> = self.db.list_providers()?.into_iter().map(|p| self.with_key_flag(p)).collect();
+        all.extend(self.on_device_config());
+        Ok(all)
     }
 
     pub fn provider_kinds(&self) -> Vec<ProviderKindInfo> {
-        ProviderKind::ALL.into_iter().map(ProviderKindInfo::from).collect()
+        // On-device models are not something to add by hand: the iPhone app offers them when it can run them.
+        ProviderKind::ALL.into_iter().filter(|k| *k != ProviderKind::OnDevice).map(ProviderKindInfo::from).collect()
     }
 
     /// Save a provider config. `api_key`: None = unchanged, Some("") = remove, Some(k) = store.
     pub fn save_provider(&self, cfg: ProviderConfig, api_key: Option<String>) -> Result<ProviderConfig> {
         let mut cfg = cfg;
+        if cfg.kind == ProviderKind::OnDevice || cfg.id == crate::providers::ondevice::ON_DEVICE_PROVIDER_ID {
+            return Err(CoreError::invalid("on-device models are built in; there is nothing to add or change"));
+        }
         if cfg.id.is_empty() {
             cfg.id = new_id();
         }
@@ -324,6 +412,11 @@ impl Core {
     }
 
     pub(crate) fn provider(&self, provider_id: &str) -> Result<(ProviderConfig, Arc<dyn Provider>)> {
+        if provider_id == crate::providers::ondevice::ON_DEVICE_PROVIDER_ID {
+            let cfg = self.provider_config(provider_id)?;
+            let runtime = self.on_device_runtime().ok_or_else(|| CoreError::invalid("on-device models are not available here"))?;
+            return Ok((cfg, Arc::new(crate::providers::ondevice::OnDeviceProvider::new(runtime))));
+        }
         let cfg = self.db.get_provider(provider_id)?;
         if !cfg.enabled {
             return Err(CoreError::invalid(format!("the provider '{}' is turned off", cfg.name)));
@@ -492,4 +585,10 @@ impl Core {
             t.cancel();
         }
     }
+}
+
+fn is_loopback(url: &str) -> bool {
+    url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_lowercase)).is_some_and(|h| {
+        matches!(h.as_str(), "localhost" | "127.0.0.1" | "::1" | "[::1]" | "0.0.0.0") || h.ends_with(".local")
+    })
 }

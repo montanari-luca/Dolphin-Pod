@@ -83,6 +83,8 @@ export interface Backend {
   syncDevices(): Promise<DeviceInfo[]>;
   syncRevokeDevice(deviceId: string): Promise<void>;
   setDeviceName(name: string): Promise<void>;
+  /** Download an attachment another device uploaded; resolves to the local file path. */
+  fetchAttachment(attachmentId: string): Promise<string>;
   remoteSettings(): Promise<RemoteSettings>;
   setRemoteEnabled(enabled: boolean): Promise<RemoteSettings>;
   remoteAuthorize(deviceId: string, allow: boolean): Promise<void>;
