@@ -111,6 +111,8 @@ pub struct ChatRequest {
     pub max_tokens: Option<u32>,
     /// Ask for a JSON object reply where the provider supports it.
     pub json_mode: bool,
+    /// Add the provider's own server-side web search tool (OpenRouter's `openrouter:web_search`).
+    pub web_search: bool,
     /// The model is a reasoning model: ask the provider to return its reasoning stream.
     pub want_reasoning: bool,
 }

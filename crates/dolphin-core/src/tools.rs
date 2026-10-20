@@ -10,6 +10,7 @@ use crate::model::PermissionLevel;
 use crate::permissions::{check, resolve_in_workspace};
 use crate::providers::ToolSpec;
 use crate::util::truncate;
+use crate::websearch;
 
 const MAX_OUTPUT: usize = 24_000;
 
@@ -25,6 +26,55 @@ pub fn image_tool() -> ToolSpec {
             "prompt": { "type": "string", "description": "Detailed image prompt: subject, composition, style, lighting, palette, mood." }
         }, "required": ["prompt"] }),
     )
+}
+
+/// Web tools, available in every chat (no workspace needed). With a native search provider
+/// (OpenRouter's server tool) only `fetch_page` is added; its own search runs server-side.
+pub fn web_specs(native_search: bool) -> Vec<ToolSpec> {
+    let mut v = Vec::new();
+    if !native_search {
+        v.push(spec(
+            "web_search",
+            "Search the web for current information. Returns titles, URLs and snippets; use fetch_page to read a result in full.",
+            json!({ "type": "object", "properties": {
+                "query": { "type": "string", "description": "Search keywords, as you would type them into a search engine." },
+                "max_results": { "type": "integer", "description": "Results to return (1-10). Default 6." }
+            }, "required": ["query"] }),
+        ));
+    }
+    v.push(spec(
+        "fetch_page",
+        "Open a public web page (or a plain-text/JSON URL) and read its text content.",
+        json!({ "type": "object", "properties": {
+            "url": { "type": "string", "description": "Full http(s) URL." },
+            "max_chars": { "type": "integer", "description": "Maximum characters to return (1000-30000). Default 12000." }
+        }, "required": ["url"] }),
+    ));
+    v
+}
+
+pub fn is_web_tool(name: &str) -> bool {
+    matches!(name, "web_search" | "fetch_page")
+}
+
+/// Execute a web tool. These are read-only and need no workspace.
+pub async fn execute_web(name: &str, args: &Value) -> Result<String> {
+    if args.get("_invalid_json").is_some() {
+        return Err(CoreError::invalid("the tool arguments were not valid JSON; send them again"));
+    }
+    match name {
+        "web_search" => {
+            let q = s(args, "query")?;
+            let max = args["max_results"].as_u64().unwrap_or(6).clamp(1, 10) as usize;
+            let hits = websearch::search(q, max).await?;
+            Ok(truncate(&websearch::format_hits(q, &hits), MAX_OUTPUT))
+        }
+        "fetch_page" => {
+            let max = args["max_chars"].as_u64().unwrap_or(websearch::MAX_PAGE_CHARS as u64).clamp(1000, 30_000) as usize;
+            websearch::fetch_page(s(args, "url")?, max).await
+        }
+        other => Err(CoreError::invalid(format!("unknown tool '{other}'"))),
+    }
 }
 
 /// Tools offered to an agent. Write tools are only offered with full permissions (and are also
@@ -80,6 +130,8 @@ pub fn summarize(name: &str, args: &Value) -> String {
         "write_file" => format!("Wrote {}", a("path")),
         "edit_file" => format!("Edited {}", a("path")),
         "run_command" => format!("Ran `{}`", truncate(&a("command"), 80)),
+        "web_search" => format!("Searched the web for \"{}\"", truncate(&a("query"), 60)),
+        "fetch_page" => format!("Opened {}", truncate(&a("url"), 80)),
         "generate_image" => "Generated an image".into(),
         other => format!("Called {other}"),
     }
@@ -240,6 +292,16 @@ mod tests {
         let out = execute(dir.path(), full, "run_command", &json!({"command": "echo hi"})).await.unwrap();
         assert!(out.contains("exit code: 0") && out.contains("hi"));
         assert!(execute(dir.path(), full, "write_file", &json!({"path": "../evil.txt", "content": "x"})).await.is_err());
+    }
+
+    #[test]
+    fn web_tools_need_no_workspace_and_native_search_replaces_ours() {
+        let own: Vec<String> = web_specs(false).into_iter().map(|t| t.name).collect();
+        assert_eq!(own, ["web_search", "fetch_page"]);
+        let native: Vec<String> = web_specs(true).into_iter().map(|t| t.name).collect();
+        assert_eq!(native, ["fetch_page"]);
+        assert!(is_web_tool("web_search") && !is_web_tool("read_file"));
+        assert!(check(PermissionLevel::ReadOnly, "web_search").is_ok());
     }
 
     #[test]

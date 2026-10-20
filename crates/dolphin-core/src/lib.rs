@@ -20,6 +20,7 @@ pub mod seed;
 pub mod settings;
 pub mod tools;
 pub mod update;
+pub mod websearch;
 pub mod util;
 
 pub use crate::core::{Core, CoreRef};

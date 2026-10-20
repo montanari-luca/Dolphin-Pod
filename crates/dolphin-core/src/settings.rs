@@ -92,6 +92,7 @@ pub mod keys {
     pub const HISTORY_MESSAGES: &str = "context.history_messages";
     pub const PASTE_THRESHOLD: &str = "chat.paste_threshold";
     pub const SHOW_BRIEFS: &str = "routing.show_briefs";
+    pub const WEB_ACCESS: &str = "web.access";
     pub const ONBOARDED: &str = "app.onboarded";
     pub const DISPLAY_NAME: &str = "profile.display_name";
 
@@ -131,6 +132,7 @@ pub fn registry() -> Vec<SettingDef> {
         def(keys::PASTE_THRESHOLD, "Long paste threshold (characters)", "Pasted text longer than this becomes a .txt attachment.", Global,
             Int { min: 500, max: 200_000 }, json!(6000)),
         def(keys::SHOW_BRIEFS, "Show orchestration briefs", "Show Lincoln's brief and the routing decision on agent messages.", Global, Bool, json!(true)),
+        def(keys::WEB_ACCESS, "Web access for agents", "Let agents search the web and open public pages to answer with current information.", Global, Bool, json!(true)),
         def(keys::ONBOARDED, "Onboarding finished", "Internal.", Global, Bool, json!(false)),
         def(keys::DISPLAY_NAME, "Your name", "How you appear in chats. Agents address you by it.", Global, Text { max_len: 32 }, json!("You")),
 

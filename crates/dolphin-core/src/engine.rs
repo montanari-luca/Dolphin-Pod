@@ -494,6 +494,13 @@ impl Core {
         let is_image_agent = agent.specialty == "image" && agent.image_model.is_some();
 
         let mut tool_specs = if model.tools { tools::specs(workspace.is_some(), level) } else { vec![] };
+        // Web access for every agent (Roger included): OpenRouter runs its own search server-side,
+        // everyone else gets the built-in web_search engine. Both can open pages with fetch_page.
+        let web = model.tools && settings::get_bool(&self.db, keys::WEB_ACCESS);
+        let native_search = web && cfg.kind == ProviderKind::Openrouter;
+        if web {
+            tool_specs.extend(tools::web_specs(native_search));
+        }
         if is_image_agent && model.tools {
             tool_specs.push(tools::image_tool());
         }
@@ -505,6 +512,7 @@ impl Core {
             mode: task.mode,
             permission: level,
             has_image_tool: is_image_agent,
+            has_web: web,
             preferences: &turn.prefs,
             user_name: Some(user_name.as_str()).filter(|n| !n.is_empty() && !n.eq_ignore_ascii_case("you")),
         });
@@ -520,6 +528,7 @@ impl Core {
             effort: model.effort.clone(),
             max_tokens: None,
             json_mode: false,
+            web_search: native_search,
             want_reasoning: true,
         };
         stats.input_chars = req.system.len() + req.messages.iter().map(|m| m.text_content().len()).sum::<usize>();
@@ -657,6 +666,11 @@ impl Core {
                     generated_image = true;
                     tokio::select! {
                         r = self.generate_image(agent, msg, call.arguments["prompt"].as_str().unwrap_or_default()) => r,
+                        _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
+                    }
+                } else if tools::is_web_tool(&call.name) {
+                    tokio::select! {
+                        r = tools::execute_web(&call.name, &call.arguments) => r,
                         _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
                     }
                 } else if let Some(ws) = &workspace {

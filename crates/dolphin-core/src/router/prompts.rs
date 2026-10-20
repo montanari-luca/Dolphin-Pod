@@ -53,6 +53,7 @@ pub struct AgentPromptInput<'a> {
     pub mode: Mode,
     pub permission: PermissionLevel,
     pub has_image_tool: bool,
+    pub has_web: bool,
     pub preferences: &'a [String],
     /// The user's display name, if they set one other than the default "You".
     pub user_name: Option<&'a str>,
@@ -80,6 +81,9 @@ pub fn agent_system(i: &AgentPromptInput) -> String {
         mode = mode_instruction(i.mode),
         perms = permissions_text(i.chat.workspace_path.as_deref(), i.permission, i.has_image_tool),
     );
+    if i.has_web {
+        s.push_str("\n\nYou have live web access. Search the web (and open pages) when the question depends on current or recent information, specific facts you are not sure about, or anything the user asks you to look up; answer directly from your own knowledge when you are confident. When you use web results, cite the sources as Markdown links.");
+    }
     if let Some(n) = i.user_name {
         s.push_str(&format!("\n\nThe user's name is {n}. User messages in the history are theirs."));
     }

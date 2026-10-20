@@ -88,12 +88,16 @@ pub(crate) fn build_body(kind: ProviderKind, req: &ChatRequest) -> Value {
     if kind != ProviderKind::Mistral {
         body["stream_options"] = json!({ "include_usage": true });
     }
-    if !req.tools.is_empty() {
-        body["tools"] = json!(req
-            .tools
-            .iter()
-            .map(|t| json!({ "type": "function", "function": { "name": t.name, "description": t.description, "parameters": t.parameters } }))
-            .collect::<Vec<_>>());
+    let mut tools: Vec<Value> = req
+        .tools
+        .iter()
+        .map(|t| json!({ "type": "function", "function": { "name": t.name, "description": t.description, "parameters": t.parameters } }))
+        .collect();
+    if req.web_search && kind == ProviderKind::Openrouter {
+        tools.push(json!({ "type": "openrouter:web_search" }));
+    }
+    if !tools.is_empty() {
+        body["tools"] = json!(tools);
     }
     if req.json_mode {
         body["response_format"] = json!({ "type": "json_object" });
@@ -396,6 +400,13 @@ mod tests {
         assert_eq!(a, vec![ProviderEvent::ReasoningDelta("hmm".into())]);
         let b = m.map(&json!({"choices": [{"delta": {"content": [{"type": "thinking", "thinking": [{"type": "text", "text": "ponder"}]}, {"type": "text", "text": "Done"}]}}]}));
         assert_eq!(b, vec![ProviderEvent::ReasoningDelta("ponder".into()), ProviderEvent::TextDelta("Done".into())]);
+    }
+
+    #[test]
+    fn openrouter_gets_its_server_side_web_search_tool() {
+        let req = ChatRequest { model: "m".into(), web_search: true, ..Default::default() };
+        assert_eq!(build_body(ProviderKind::Openrouter, &req)["tools"], json!([{ "type": "openrouter:web_search" }]));
+        assert!(build_body(ProviderKind::Groq, &req).get("tools").is_none());
     }
 
     #[test]

@@ -71,6 +71,9 @@ export function GeneralPage() {
         <Row title="Stuck-agent timeout" description="If an agent produces nothing for this long, Roger checks on it.">
           <NumberSetting k="supervisor.stall_seconds" min={15} max={1800} suffix="seconds" />
         </Row>
+        <Row title="Web access" description="Let agents search the web and open public pages for current information. OpenRouter models use OpenRouter's search; all others use a built-in key-less search. Search terms and page requests leave your computer.">
+          <BoolSetting k="web.access" />
+        </Row>
         <Row title="Show orchestration details" description="Show Lincoln's brief and the routing decision on messages.">
           <BoolSetting k="routing.show_briefs" />
         </Row>
