@@ -2,6 +2,13 @@ pub fn new_id() -> String {
     uuid::Uuid::now_v7().to_string()
 }
 
+/// A stable id derived from a name, so every device that seeds the same default gets the same id and
+/// synced copies of it line up instead of duplicating.
+pub fn stable_id(name: &str) -> String {
+    const NAMESPACE: uuid::Uuid = uuid::Uuid::from_bytes(*b"dolphinpod.seeds");
+    uuid::Uuid::new_v5(&NAMESPACE, name.as_bytes()).to_string()
+}
+
 pub fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }

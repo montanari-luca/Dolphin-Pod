@@ -4,7 +4,7 @@
 use crate::db::Db;
 use crate::error::Result;
 use crate::model::{Agent, AgentColor, AgentRole, Chat, UserRole};
-use crate::util::{new_id, now_ms};
+use crate::util::{now_ms, stable_id};
 
 pub struct AgentSeed {
     pub slug: &'static str,
@@ -118,6 +118,18 @@ pub const CHATS: &[ChatSeed] = &[
     ChatSeed { name: "Creative", icon: "palette", agents: &["emma", "sarah"] },
 ];
 
+pub fn agent_seed_id(slug: &str) -> String {
+    stable_id(&format!("agent:{slug}"))
+}
+
+pub fn chat_seed_id(name: &str) -> String {
+    stable_id(&format!("chat:{name}"))
+}
+
+pub fn master_role_id() -> String {
+    stable_id("role:master")
+}
+
 pub fn seed_if_needed(db: &Db) -> Result<bool> {
     if db.meta_get("seeded")?.is_some() {
         return Ok(false);
@@ -126,7 +138,7 @@ pub fn seed_if_needed(db: &Db) -> Result<bool> {
     let mut ids = std::collections::HashMap::new();
     for (i, s) in AGENTS.iter().enumerate() {
         let a = Agent {
-            id: new_id(),
+            id: agent_seed_id(s.slug),
             slug: s.slug.into(),
             name: s.name.into(),
             role: s.role,
@@ -146,7 +158,7 @@ pub fn seed_if_needed(db: &Db) -> Result<bool> {
         let mut agent_ids = vec![ids["roger"].clone(), ids["lincoln"].clone()];
         agent_ids.extend(c.agents.iter().map(|s| ids[s].clone()));
         db.upsert_chat(&Chat {
-            id: new_id(),
+            id: chat_seed_id(c.name),
             name: c.name.into(),
             icon: c.icon.into(),
             sort: i as i32,
@@ -162,6 +174,44 @@ pub fn seed_if_needed(db: &Db) -> Result<bool> {
     Ok(true)
 }
 
+/// Databases seeded before ids were stable have random ids for the default agents, chats and role.
+/// Rewrites them (and every reference) to the stable ids, so two devices that each seeded their own
+/// copy line up once they sync. Runs once per database and never touches custom agents or chats.
+pub fn canonicalize_seed_ids(db: &Db) -> Result<usize> {
+    if db.meta_get("seed_ids_stable")?.is_some() {
+        return Ok(0);
+    }
+    let mut renamed = 0;
+    for a in db.list_agents()? {
+        if AGENTS.iter().any(|s| s.slug == a.slug) {
+            let to = agent_seed_id(&a.slug);
+            if a.id != to && db.rename_id(&a.id, &to)? {
+                renamed += 1;
+            }
+        }
+    }
+    // A default chat is the oldest chat of that name; a chat the user made later with the same name stays as is.
+    let mut chats = db.list_chats()?;
+    chats.sort_by_key(|c| c.created_at);
+    for s in CHATS {
+        if let Some(c) = chats.iter().find(|c| c.name == s.name) {
+            let to = chat_seed_id(s.name);
+            if c.id != to && db.rename_id(&c.id, &to)? {
+                renamed += 1;
+            }
+        }
+    }
+    if db.meta_get("roles_seeded")?.is_some()
+        && let Some(r) = db.list_roles()?.into_iter().find(|r| r.name == "Master" && r.icon == "crown")
+        && r.id != master_role_id()
+        && db.rename_id(&r.id, &master_role_id())?
+    {
+        renamed += 1;
+    }
+    db.meta_set("seed_ids_stable", "1")?;
+    Ok(renamed)
+}
+
 /// The user's default role: "Master", in a rainbow gradient. Runs once per database (fresh or upgraded).
 pub fn seed_roles_if_needed(db: &Db) -> Result<bool> {
     if db.meta_get("roles_seeded")?.is_some() {
@@ -169,7 +219,7 @@ pub fn seed_roles_if_needed(db: &Db) -> Result<bool> {
     }
     if db.list_roles()?.is_empty() {
         db.upsert_role(&UserRole {
-            id: new_id(),
+            id: master_role_id(),
             name: "Master".into(),
             icon: "crown".into(),
             color: rainbow(),

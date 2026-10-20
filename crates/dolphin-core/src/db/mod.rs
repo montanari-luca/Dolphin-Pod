@@ -8,6 +8,7 @@ mod providers;
 mod roles;
 
 use std::path::Path;
+use std::sync::atomic::AtomicI64;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use rusqlite::{Connection, OptionalExtension};
@@ -18,12 +19,18 @@ use crate::error::Result;
 use crate::util::new_id;
 
 /// Ordered migrations; index + 1 is the schema version it produces. Only ever append.
-const MIGRATIONS: &[&str] = &[include_str!("schema.sql"), include_str!("migration_0002_user_roles.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("schema.sql"),
+    include_str!("migration_0002_user_roles.sql"),
+    include_str!("migration_0003_sync.sql"),
+];
 
 #[derive(Clone)]
 pub struct Db {
     conn: Arc<Mutex<Connection>>,
     device_id: Arc<str>,
+    /// Test hook for the sync clock; always 0 in production.
+    pub(crate) clock_skew_ms: Arc<AtomicI64>,
 }
 
 impl Db {
@@ -59,7 +66,7 @@ impl Db {
                 id
             }
         };
-        Ok(Self { conn: Arc::new(Mutex::new(conn)), device_id: device_id.into() })
+        Ok(Self { conn: Arc::new(Mutex::new(conn)), device_id: device_id.into(), clock_skew_ms: Arc::new(AtomicI64::new(0)) })
     }
 
     pub fn device_id(&self) -> &str {
@@ -69,6 +76,68 @@ impl Db {
     pub(crate) fn conn(&self) -> MutexGuard<'_, Connection> {
         // A poisoned lock only means another thread panicked mid-query; SQLite itself is still consistent.
         self.conn.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Replace an id everywhere it appears: key columns, foreign keys and the JSON that embeds ids.
+    /// Returns false (and changes nothing) when `to` is already taken by another record.
+    pub(crate) fn rename_id(&self, from: &str, to: &str) -> Result<bool> {
+        let mut conn = self.conn();
+        let taken: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM agents WHERE id = ?1) OR EXISTS(SELECT 1 FROM chats WHERE id = ?1)
+                 OR EXISTS(SELECT 1 FROM user_roles WHERE id = ?1)",
+            [to],
+            |r| r.get(0),
+        )?;
+        if taken {
+            return Ok(false);
+        }
+        let tx = conn.transaction()?;
+        tx.execute("UPDATE sync_ctl SET applying = 1", [])?;
+        // Whole-string columns.
+        for (table, col) in [
+            ("agents", "id"),
+            ("chats", "id"),
+            ("user_roles", "id"),
+            ("chat_agents", "chat_id"),
+            ("chat_agents", "agent_id"),
+            ("messages", "chat_id"),
+            ("messages", "agent_id"),
+            ("attachments", "chat_id"),
+            ("usage", "agent_id"),
+            ("permission_grants", "chat_id"),
+            ("permission_grants", "agent_id"),
+            ("action_log", "chat_id"),
+            ("action_log", "agent_id"),
+            ("automations", "chat_id"),
+        ] {
+            tx.execute(&format!("UPDATE {table} SET {col} = ?2 WHERE {col} = ?1"), [from, to])?;
+        }
+        // Ids embedded in JSON (mentions, routing metadata) and in per-id setting values.
+        tx.execute("UPDATE messages SET mentions = REPLACE(mentions, ?1, ?2) WHERE mentions LIKE '%' || ?1 || '%'", [from, to])?;
+        tx.execute("UPDATE messages SET meta = REPLACE(meta, ?1, ?2) WHERE meta LIKE '%' || ?1 || '%'", [from, to])?;
+        tx.execute("UPDATE settings SET value = REPLACE(value, ?1, ?2) WHERE value LIKE '%' || ?1 || '%'", [from, to])?;
+        tx.execute("UPDATE sync_ctl SET applying = 0", [])?;
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// Attachments with a local file that haven't been uploaded for sync yet (id, path).
+    pub fn sync_blobs_pending(&self) -> Result<Vec<(String, String)>> {
+        let conn = self.conn();
+        let mut st = conn.prepare(
+            "SELECT a.id, a.path FROM attachments a
+             WHERE a.deleted = 0 AND a.message_id IS NOT NULL AND a.path != ''
+               AND NOT EXISTS (SELECT 1 FROM sync_blobs b WHERE b.attachment_id = a.id)",
+        )?;
+        Ok(st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn sync_blob_done(&self, attachment_id: &str) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO sync_blobs (attachment_id, uploaded_at) VALUES (?1, ?2) ON CONFLICT DO NOTHING",
+            rusqlite::params![attachment_id, crate::util::now_ms()],
+        )?;
+        Ok(())
     }
 
     pub fn meta_get(&self, key: &str) -> Result<Option<String>> {

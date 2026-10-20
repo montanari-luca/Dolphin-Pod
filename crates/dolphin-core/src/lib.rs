@@ -21,6 +21,7 @@ pub mod scheduler;
 pub mod secrets;
 pub mod seed;
 pub mod settings;
+pub mod sync;
 pub mod tools;
 pub mod update;
 pub mod websearch;

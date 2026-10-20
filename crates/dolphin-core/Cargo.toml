@@ -39,7 +39,7 @@ tokio-util = "0.7"
 tracing = "0.1"
 ts-rs = { version = "11", features = ["serde-json-impl", "uuid-impl", "no-serde-warnings"] }
 url = "2"
-uuid = { version = "1", features = ["v7", "serde"] }
+uuid = { version = "1", features = ["v5", "v7", "serde"] }
 zeroize = { version = "1", features = ["derive"] }
 
 [dev-dependencies]

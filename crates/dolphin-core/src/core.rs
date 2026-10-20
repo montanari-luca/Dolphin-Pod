@@ -43,6 +43,7 @@ impl Core {
         std::fs::create_dir_all(data_dir.join("attachments"))?;
         seed::seed_if_needed(&db)?;
         seed::seed_roles_if_needed(&db)?;
+        seed::canonicalize_seed_ids(&db)?;
         db.recover_interrupted_messages()?;
         let (events, _) = broadcast::channel(4096);
         Ok(Arc::new(Self {
