@@ -6,6 +6,7 @@ import type {
   Automation,
   Chat,
   CoreEvent,
+  DeviceInfo,
   Message,
   ModelInfo,
   PermissionGrant,
@@ -13,6 +14,7 @@ import type {
   ProviderKind,
   ProviderKindInfo,
   SettingDef,
+  SyncStatus,
   UsageStats,
   UserRole,
 } from "@dolphin/shared";
@@ -80,9 +82,17 @@ public static int add(int a, int b) {
 
 Quick check: what would you change to return a \`double\`?`;
 
+let syncState: SyncStatus = { state: "off", provider: null, lastSyncAt: null, pending: 0, error: null, deviceId: "this", deviceName: "This computer" };
+let emitSync: (() => void) | null = null;
+function setSync(patch: Partial<SyncStatus>) {
+  syncState = { ...syncState, ...patch };
+  emitSync?.();
+}
+
 export function mockBackend(): Backend {
   const listeners: ((e: CoreEvent) => void)[] = [];
   const emit = (e: CoreEvent) => listeners.forEach((l) => l(e));
+  emitSync = () => emit({ type: "syncStatusChanged", status: { ...syncState } });
   const agents: Agent[] = SEED.map(([slug, name, role, specialty, job, color], i) => ({
     id: `a-${slug}`, slug, name, role, specialty, job, color, model: null, imageModel: null, iosModel: null, sort: i, updatedAt: now(),
   }));
@@ -293,6 +303,33 @@ export function mockBackend(): Backend {
       return saved;
     },
     deleteAutomation: async (aid) => void automations.splice(automations.findIndex((a) => a.id === aid), 1),
+    syncStatus: async () => ({ ...syncState }),
+    async syncSetup(url, passphrase) {
+      if (passphrase.length < 8) throw "use a passphrase of at least 8 characters";
+      if (!url.startsWith("postgres")) throw "sync needs a Postgres connection URL (postgres://…). NeonDB gives you one for free.";
+      setSync({ state: "idle", provider: new URL(url.replace("postgresql://", "postgres://")).hostname, lastSyncAt: now() });
+      return { recoveryKey: "abandon ability able about above absent absorb abstract absurd abuse access accident account accuse achieve acid acoustic acquire across act action actor actress", created: true };
+    },
+    async syncRecover(url) {
+      setSync({ state: "idle", provider: new URL(url.replace("postgresql://", "postgres://")).hostname, lastSyncAt: now() });
+    },
+    async syncUnlock() {
+      setSync({ state: "idle" });
+    },
+    async syncDisable() {
+      setSync({ state: "off", provider: null, lastSyncAt: null });
+    },
+    async syncNow() {
+      setSync({ lastSyncAt: now() });
+    },
+    syncChangePassphrase: async () => {},
+    syncNewRecoveryKey: async () => "legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth title",
+    syncDevices: async (): Promise<DeviceInfo[]> => [
+      { id: "this", name: "This computer", platform: "macos", kind: "desktop", remote: false, lastSeen: now(), revoked: false, thisDevice: true },
+      { id: "phone", name: "Luca's iPhone", platform: "ios", kind: "phone", remote: false, lastSeen: now() - 120_000, revoked: false, thisDevice: false },
+    ],
+    syncRevokeDevice: async () => {},
+    setDeviceName: async (name) => setSync({ deviceName: name }),
     checkUpdate: async () => ({ current: "0.1.0", latest: "0.1.0", available: false, url: null }),
     pickFolder: async () => "/Users/you/Projects/demo",
     pickFiles: async () => [],

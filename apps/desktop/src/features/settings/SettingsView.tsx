@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import { Bot, Info, Palette, Plug, ScrollText, SlidersHorizontal, UserRound } from "lucide-react";
+import { Bot, Cloud, Info, Palette, Plug, ScrollText, SlidersHorizontal, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { useApp, type SettingsTab } from "@/store/app";
@@ -8,6 +8,7 @@ import { AgentsPage } from "./AgentsPage";
 import { AppearancePage, GeneralPage, PreferencesPage } from "./GeneralPages";
 import { ProfilePage } from "./ProfilePage";
 import { ProvidersPage } from "./ProvidersPage";
+import { SyncPage } from "./SyncPage";
 
 const TABS: { id: SettingsTab; label: string; icon: ReactNode }[] = [
   { id: "profile", label: "Profile", icon: <UserRound className="size-4" /> },
@@ -15,6 +16,7 @@ const TABS: { id: SettingsTab; label: string; icon: ReactNode }[] = [
   { id: "providers", label: "Providers", icon: <Plug className="size-4" /> },
   { id: "agents", label: "Agents", icon: <Bot className="size-4" /> },
   { id: "preferences", label: "Preferences", icon: <ScrollText className="size-4" /> },
+  { id: "sync", label: "Sync", icon: <Cloud className="size-4" /> },
   { id: "appearance", label: "Appearance", icon: <Palette className="size-4" /> },
   { id: "about", label: "About", icon: <Info className="size-4" /> },
 ];
@@ -46,6 +48,7 @@ export function SettingsView() {
           {tab === "providers" && <ProvidersPage />}
           {tab === "agents" && <AgentsPage />}
           {tab === "preferences" && <PreferencesPage />}
+          {tab === "sync" && <SyncPage />}
           {tab === "appearance" && <AppearancePage />}
           {tab === "about" && <AboutPage />}
         </motion.div>

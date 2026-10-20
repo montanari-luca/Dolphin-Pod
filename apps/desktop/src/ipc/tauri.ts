@@ -51,6 +51,17 @@ export function tauriBackend(): Backend {
     saveAutomation: (automation) => invoke("save_automation", { automation }),
     deleteAutomation: (automationId) => invoke("delete_automation", { automationId }),
     checkUpdate: () => invoke("check_update"),
+    syncStatus: () => invoke("sync_status"),
+    syncSetup: (url, passphrase) => invoke("sync_setup", { url, passphrase }),
+    syncRecover: (url, recoveryKey, newPassphrase) => invoke("sync_recover", { url, recoveryKey, newPassphrase }),
+    syncUnlock: (passphrase) => invoke("sync_unlock", { passphrase }),
+    syncDisable: () => invoke("sync_disable"),
+    syncNow: () => invoke("sync_now"),
+    syncChangePassphrase: (oldPassphrase, newPassphrase) => invoke("sync_change_passphrase", { old: oldPassphrase, new: newPassphrase }),
+    syncNewRecoveryKey: (passphrase) => invoke("sync_new_recovery_key", { passphrase }),
+    syncDevices: () => invoke("sync_devices"),
+    syncRevokeDevice: (deviceId) => invoke("sync_revoke_device", { deviceId }),
+    setDeviceName: (name) => invoke("set_device_name", { name }),
     async pickFolder() {
       const r = await open({ directory: true, multiple: false, title: "Choose a workspace folder" });
       return typeof r === "string" ? r : null;

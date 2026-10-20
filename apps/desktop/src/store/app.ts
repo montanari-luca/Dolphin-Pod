@@ -8,13 +8,14 @@ import type {
   PermissionGrant,
   ProviderConfig,
   ProviderKindInfo,
+  SyncStatus,
   UsageStats,
   UserRole,
 } from "@dolphin/shared";
 import { backend, errorText, type AppInfo, type Backend, type Settings } from "@/ipc/api";
 
 export type View = "chat" | "settings" | "automations";
-export type SettingsTab = "profile" | "general" | "providers" | "agents" | "preferences" | "appearance" | "about";
+export type SettingsTab = "profile" | "general" | "providers" | "agents" | "preferences" | "sync" | "appearance" | "about";
 
 export interface Toast {
   id: number;
@@ -47,6 +48,7 @@ interface State {
   confirms: { id: string; title: string; body: string }[];
   toasts: Toast[];
   update: { version: string; url: string } | null;
+  sync: SyncStatus | null;
 
   activeChatId: string | null;
   view: View;
@@ -86,6 +88,7 @@ export const useApp = create<State>((set, get) => ({
   confirms: [],
   toasts: [],
   update: null,
+  sync: null,
   activeChatId: null,
   view: "chat",
   settingsTab: "general",
@@ -99,7 +102,7 @@ export const useApp = create<State>((set, get) => ({
       const api = await backend();
       set({ api });
       await api.subscribe((e) => get().apply(e));
-      const [info, agents, roles, chats, settings, usage, providers, kinds] = await Promise.all([
+      const [info, agents, roles, chats, settings, usage, providers, kinds, sync] = await Promise.all([
         api.appInfo(),
         api.listAgents(),
         api.listRoles(),
@@ -108,6 +111,7 @@ export const useApp = create<State>((set, get) => ({
         api.usageAll(),
         api.listProviders(),
         api.providerKinds(),
+        api.syncStatus(),
       ]);
       const lastChat = safeGet("dp.activeChat");
       const active = chats.find((c) => c.id === lastChat)?.id ?? chats[0]?.id ?? null;
@@ -120,6 +124,7 @@ export const useApp = create<State>((set, get) => ({
         usage: Object.fromEntries(usage.map((u) => [u.agentId, u])),
         providers,
         kinds,
+        sync,
         ready: true,
       });
       if (active) await get().openChat(active);
@@ -201,7 +206,12 @@ export const useApp = create<State>((set, get) => ({
         }
         break;
       case "agentChanged":
-        set((s) => ({ agents: s.agents.map((a) => (a.id === e.agent.id ? e.agent : a)) }));
+        // A new agent can arrive from another device, so an unknown id is added.
+        set((s) => ({
+          agents: s.agents.some((a) => a.id === e.agent.id)
+            ? s.agents.map((a) => (a.id === e.agent.id ? e.agent : a))
+            : [...s.agents, e.agent].sort((a, b) => a.sort - b.sort),
+        }));
         break;
       case "rolesChanged":
         set({ roles: e.roles });
@@ -223,6 +233,12 @@ export const useApp = create<State>((set, get) => ({
         break;
       case "confirmRequest":
         set((s) => ({ confirms: [...s.confirms, { id: e.id, title: e.title, body: e.body }] }));
+        break;
+      case "syncStatusChanged":
+        set({ sync: e.status });
+        break;
+      case "syncApplied":
+        if (e.providers) void get().refreshProviders();
         break;
       case "updateAvailable":
         set({ update: { version: e.version, url: e.url } });

@@ -7,6 +7,7 @@ use dolphin_core::events::CoreEvent;
 use dolphin_core::model::*;
 use dolphin_core::secrets::KeyringStore;
 use dolphin_core::settings::{SettingChange, SettingDef};
+use dolphin_core::sync::manager::{self as sync, DeviceInfo, SyncSetupResult, SyncStatus};
 use dolphin_core::update::{self, UpdateInfo};
 use dolphin_core::{Core, CoreError, CoreRef, scheduler};
 use serde::Serialize;
@@ -283,6 +284,68 @@ fn spawn_update_checks(core: CoreRef) {
     });
 }
 
+// ------------------------------------------------------------------ sync
+
+#[tauri::command]
+fn sync_status(core: State<CoreRef>) -> SyncStatus {
+    core.sync_status()
+}
+
+#[tauri::command]
+async fn sync_setup(core: State<'_, CoreRef>, url: String, passphrase: String) -> Res<SyncSetupResult> {
+    core.sync_setup(&url, &passphrase).await
+}
+
+#[tauri::command]
+async fn sync_recover(core: State<'_, CoreRef>, url: String, recovery_key: String, new_passphrase: String) -> Res<()> {
+    core.sync_recover(&url, &recovery_key, &new_passphrase).await
+}
+
+#[tauri::command]
+async fn sync_unlock(core: State<'_, CoreRef>, passphrase: String) -> Res<()> {
+    core.sync_unlock(&passphrase).await
+}
+
+#[tauri::command]
+fn sync_disable(core: State<CoreRef>) -> Res<()> {
+    core.sync_disable()
+}
+
+#[tauri::command]
+async fn sync_now(core: State<'_, CoreRef>) -> Res<()> {
+    core.sync_now().await
+}
+
+#[tauri::command]
+async fn sync_change_passphrase(core: State<'_, CoreRef>, old: String, new: String) -> Res<()> {
+    core.sync_change_passphrase(&old, &new).await
+}
+
+#[tauri::command]
+async fn sync_new_recovery_key(core: State<'_, CoreRef>, passphrase: String) -> Res<String> {
+    core.sync_new_recovery_key(&passphrase).await
+}
+
+#[tauri::command]
+async fn sync_devices(core: State<'_, CoreRef>) -> Res<Vec<DeviceInfo>> {
+    core.sync_devices().await
+}
+
+#[tauri::command]
+async fn sync_revoke_device(core: State<'_, CoreRef>, device_id: String) -> Res<()> {
+    core.sync_revoke_device(&device_id).await
+}
+
+#[tauri::command]
+fn set_device_name(core: State<CoreRef>, name: String) -> Res<()> {
+    core.set_device_name(&name)
+}
+
+#[tauri::command]
+async fn sync_fetch_attachment(core: State<'_, CoreRef>, attachment_id: String) -> Res<String> {
+    core.sync_fetch_attachment(&attachment_id).await
+}
+
 fn notify_update(core: &Core, version: String, url: String) {
     core.announce(CoreEvent::UpdateAvailable { version, url });
 }
@@ -301,11 +364,23 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .on_window_event(|window, event| {
+            // Coming back to the window is a good moment to look for news from the other devices.
+            if let tauri::WindowEvent::Focused(true) = event
+                && let Some(core) = window.try_state::<CoreRef>()
+            {
+                core.sync_wake();
+            }
+        })
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             let core = Core::open(&dir, Arc::new(KeyringStore::new())).map_err(|e| e.to_string())?;
             let c = core.clone();
-            tauri::async_runtime::spawn(async move { scheduler::spawn(c) });
+            core.set_device_info(None, std::env::consts::OS, "desktop");
+            tauri::async_runtime::spawn(async move {
+                scheduler::spawn(c.clone());
+                sync::spawn(c);
+            });
             spawn_update_checks(core.clone());
             app.manage(core);
             Ok(())
@@ -348,6 +423,18 @@ pub fn run() {
             save_automation,
             delete_automation,
             check_update,
+            sync_status,
+            sync_setup,
+            sync_recover,
+            sync_unlock,
+            sync_disable,
+            sync_now,
+            sync_change_passphrase,
+            sync_new_recovery_key,
+            sync_devices,
+            sync_revoke_device,
+            set_device_name,
+            sync_fetch_attachment,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Dolphin Pod");

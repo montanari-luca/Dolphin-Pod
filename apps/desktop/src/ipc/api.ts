@@ -7,6 +7,7 @@ import type {
   Automation,
   Chat,
   CoreEvent,
+  DeviceInfo,
   Message,
   ModelInfo,
   PermissionGrant,
@@ -15,6 +16,8 @@ import type {
   ProviderKindInfo,
   SettingChange,
   SettingDef,
+  SyncSetupResult,
+  SyncStatus,
   UpdateInfo,
   UsageStats,
   UserRole,
@@ -68,6 +71,17 @@ export interface Backend {
   saveAutomation(a: Automation): Promise<Automation>;
   deleteAutomation(id: string): Promise<void>;
   checkUpdate(): Promise<UpdateInfo>;
+  syncStatus(): Promise<SyncStatus>;
+  syncSetup(url: string, passphrase: string): Promise<SyncSetupResult>;
+  syncRecover(url: string, recoveryKey: string, newPassphrase: string): Promise<void>;
+  syncUnlock(passphrase: string): Promise<void>;
+  syncDisable(): Promise<void>;
+  syncNow(): Promise<void>;
+  syncChangePassphrase(oldPassphrase: string, newPassphrase: string): Promise<void>;
+  syncNewRecoveryKey(passphrase: string): Promise<string>;
+  syncDevices(): Promise<DeviceInfo[]>;
+  syncRevokeDevice(deviceId: string): Promise<void>;
+  setDeviceName(name: string): Promise<void>;
   pickFolder(): Promise<string | null>;
   pickFiles(): Promise<string[]>;
   openUrl(url: string): Promise<void>;
