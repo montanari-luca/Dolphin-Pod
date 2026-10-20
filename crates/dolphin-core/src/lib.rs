@@ -15,6 +15,7 @@ pub mod permissions;
 pub mod preferences;
 pub mod providers;
 pub mod router;
+pub mod sandbox;
 pub mod scheduler;
 pub mod secrets;
 pub mod seed;

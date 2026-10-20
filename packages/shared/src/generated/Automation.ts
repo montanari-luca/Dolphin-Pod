@@ -8,4 +8,8 @@ timeOfDay: string,
 /**
  * Empty = every day. 0 = Monday … 6 = Sunday.
  */
-weekdays: Array<number>, enabled: boolean, lastRunDate: string | null, updatedAt: number, };
+weekdays: Array<number>, enabled: boolean, lastRunDate: string | null, 
+/**
+ * The one device that fires this automation. `None` on save means "this device".
+ */
+runnerDeviceId: string | null, updatedAt: number, };

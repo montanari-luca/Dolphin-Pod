@@ -22,8 +22,12 @@ pub fn parse_time(s: &str) -> Option<NaiveTime> {
 }
 
 /// Whether `a` should fire now. Pure, for testing.
-pub fn automation_due(a: &Automation, now: chrono::NaiveDateTime) -> bool {
+pub fn automation_due(a: &Automation, now: chrono::NaiveDateTime, this_device: &str) -> bool {
     if !a.enabled {
+        return false;
+    }
+    // With sync, every device sees every automation; only the designated runner fires it.
+    if a.runner_device_id.as_deref().is_some_and(|r| r != this_device) {
         return false;
     }
     let Some(t) = parse_time(&a.time_of_day) else { return false };
@@ -90,7 +94,7 @@ async fn run_automations(core: &CoreRef) {
     let Ok(list) = core.db.list_automations() else { return };
     let now = Local::now().naive_local();
     for mut a in list {
-        if !automation_due(&a, now) {
+        if !automation_due(&a, now, core.db.device_id()) {
             continue;
         }
         a.last_run_date = Some(now.date().format("%Y-%m-%d").to_string());
@@ -120,7 +124,7 @@ mod tests {
     use chrono::NaiveDate;
 
     fn auto(time: &str, weekdays: Vec<u8>) -> Automation {
-        Automation { id: "a".into(), chat_id: "c".into(), text: "hi".into(), time_of_day: time.into(), weekdays, enabled: true, last_run_date: None, updated_at: 0 }
+        Automation { id: "a".into(), chat_id: "c".into(), text: "hi".into(), time_of_day: time.into(), weekdays, enabled: true, last_run_date: None, runner_device_id: None, updated_at: 0 }
     }
 
     #[test]
@@ -128,15 +132,20 @@ mod tests {
         // 2026-10-19 is a Monday.
         let at = |h, m| NaiveDate::from_ymd_opt(2026, 10, 19).unwrap().and_hms_opt(h, m, 0).unwrap();
         let a = auto("09:00", vec![]);
-        assert!(!automation_due(&a, at(8, 59)));
-        assert!(automation_due(&a, at(9, 0)));
-        assert!(automation_due(&a, at(9, 4)));
-        assert!(!automation_due(&a, at(9, 5)), "missed while the device was off: no catch-up");
+        assert!(!automation_due(&a, at(8, 59), "me"));
+        assert!(automation_due(&a, at(9, 0), "me"));
+        assert!(automation_due(&a, at(9, 4), "me"));
+        assert!(!automation_due(&a, at(9, 5), "me"), "missed while the device was off: no catch-up");
         let mut ran = a.clone();
         ran.last_run_date = Some("2026-10-19".into());
-        assert!(!automation_due(&ran, at(9, 1)));
-        assert!(!automation_due(&auto("09:00", vec![2, 4]), at(9, 1)), "Wednesday/Friday only");
-        assert!(automation_due(&auto("09:00", vec![0]), at(9, 1)));
+        assert!(!automation_due(&ran, at(9, 1), "me"));
+        assert!(!automation_due(&auto("09:00", vec![2, 4]), at(9, 1), "me"), "Wednesday/Friday only");
+        assert!(automation_due(&auto("09:00", vec![0]), at(9, 1), "me"));
+        let mut elsewhere = a.clone();
+        elsewhere.runner_device_id = Some("other-device".into());
+        assert!(!automation_due(&elsewhere, at(9, 1), "me"), "only the designated runner fires it");
+        elsewhere.runner_device_id = Some("me".into());
+        assert!(automation_due(&elsewhere, at(9, 1), "me"));
     }
 
     #[test]

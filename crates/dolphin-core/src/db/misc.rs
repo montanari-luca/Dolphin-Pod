@@ -205,7 +205,7 @@ impl Db {
     pub fn list_automations(&self) -> Result<Vec<Automation>> {
         let conn = self.conn();
         let mut st = conn.prepare(
-            "SELECT id, chat_id, text, time_of_day, weekdays, enabled, last_run_date, updated_at FROM automations
+            "SELECT id, chat_id, text, time_of_day, weekdays, enabled, last_run_date, runner_device_id, updated_at FROM automations
              WHERE deleted = 0 ORDER BY time_of_day",
         )?;
         let rows = st.query_map([], row_to_automation)?.collect::<rusqlite::Result<Vec<_>>>()?;
@@ -215,12 +215,14 @@ impl Db {
     pub fn upsert_automation(&self, a: &Automation) -> Result<Automation> {
         let mut a = a.clone();
         a.updated_at = now_ms();
+        let runner = a.runner_device_id.clone().unwrap_or_else(|| self.device_id().to_string());
+        a.runner_device_id = Some(runner.clone());
         self.conn().execute(
             "INSERT INTO automations (id, chat_id, text, time_of_day, weekdays, enabled, last_run_date, runner_device_id, updated_at, device_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?8)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(id) DO UPDATE SET chat_id = excluded.chat_id, text = excluded.text, time_of_day = excluded.time_of_day,
                weekdays = excluded.weekdays, enabled = excluded.enabled, last_run_date = excluded.last_run_date,
-               updated_at = excluded.updated_at, device_id = excluded.device_id",
+               runner_device_id = excluded.runner_device_id, updated_at = excluded.updated_at, device_id = excluded.device_id",
             params![
                 a.id,
                 a.chat_id,
@@ -229,8 +231,9 @@ impl Db {
                 to_json(&a.weekdays),
                 a.enabled as i64,
                 a.last_run_date,
-                self.device_id(),
-                a.updated_at
+                runner,
+                a.updated_at,
+                self.device_id()
             ],
         )?;
         Ok(a)
@@ -257,7 +260,8 @@ fn row_to_automation(r: &Row) -> rusqlite::Result<Automation> {
         weekdays: from_json(r.get(4)?).unwrap_or_default(),
         enabled: r.get::<_, i64>(5)? != 0,
         last_run_date: r.get(6)?,
-        updated_at: r.get(7)?,
+        runner_device_id: r.get(7)?,
+        updated_at: r.get(8)?,
     })
 }
 

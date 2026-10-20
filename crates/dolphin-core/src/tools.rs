@@ -236,16 +236,9 @@ pub async fn execute(workspace: &Path, level: PermissionLevel, name: &str, args:
             let cmd = s(args, "command")?;
             let cwd = resolve_in_workspace(workspace, args["cwd"].as_str().unwrap_or("."))?;
             let secs = args["timeout_seconds"].as_u64().unwrap_or(120).clamp(1, 600);
-            let mut c = if cfg!(windows) {
-                let mut c = tokio::process::Command::new("cmd");
-                c.arg("/C").arg(cmd);
-                c
-            } else {
-                let mut c = tokio::process::Command::new("sh");
-                c.arg("-c").arg(cmd);
-                c
-            };
-            c.current_dir(&cwd).kill_on_drop(true).stdin(std::process::Stdio::null());
+            let ws = workspace.canonicalize()?;
+            let (mut c, confinement) = crate::sandbox::command(cmd, &ws, &cwd);
+            c.kill_on_drop(true).stdin(std::process::Stdio::null());
             let out = match tokio::time::timeout(Duration::from_secs(secs), c.output()).await {
                 Ok(r) => r?,
                 Err(_) => return Err(CoreError::invalid(format!("command timed out after {secs}s"))),
@@ -256,6 +249,9 @@ pub async fn execute(workspace: &Path, level: PermissionLevel, name: &str, args:
             if !err.trim().is_empty() {
                 text.push_str("\n[stderr]\n");
                 text.push_str(&err);
+            }
+            if confinement == crate::sandbox::Confinement::Unconfined {
+                text.push_str(&format!("\n{}", crate::sandbox::UNCONFINED_NOTE));
             }
             Ok(truncate(&format!("exit code: {}\n{}", out.status.code().unwrap_or(-1), text.trim_end()), MAX_OUTPUT))
         }

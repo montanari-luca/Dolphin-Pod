@@ -454,6 +454,8 @@ pub struct Automation {
     pub weekdays: Vec<u8>,
     pub enabled: bool,
     pub last_run_date: Option<String>,
+    /// The one device that fires this automation. `None` on save means "this device".
+    pub runner_device_id: Option<String>,
     #[ts(type = "number")]
     pub updated_at: i64,
 }
