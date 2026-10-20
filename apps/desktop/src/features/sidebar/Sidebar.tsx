@@ -17,8 +17,8 @@ export function Sidebar() {
   const [creating, setCreating] = useState(false);
 
   return (
-    <aside className="glass relative z-10 flex h-full w-[248px] shrink-0 flex-col rounded-xl overflow-hidden">
-      <div className="drag-region traffic-pad flex h-[60px] shrink-0 items-end gap-2.5 px-4 pb-2.5">
+    <aside className="drag-region glass relative z-10 flex h-full w-[248px] shrink-0 flex-col rounded-xl overflow-hidden">
+      <div className="traffic-pad flex h-[60px] shrink-0 items-end gap-2.5 px-4 pb-2.5">
         <img src="/brand/dolphin-icon.png" alt="" className="size-6 drop-shadow" draggable={false} />
         <span className="text-[14px] font-semibold tracking-tight text-fg">Dolphin Pod</span>
       </div>

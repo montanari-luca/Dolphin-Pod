@@ -40,6 +40,17 @@ export const Composer = forwardRef<ComposerHandle, { chat: Chat; busy: boolean }
   }, [chat.id]);
   useEffect(() => safeSetDraft(chat.id, text), [chat.id, text]);
 
+  // Esc stops a running chat even when the input isn't focused (unless a dialog owns Esc).
+  useEffect(() => {
+    if (!busy) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.target === ta.current || document.querySelector("[role='dialog']")) return;
+      void api?.stopChat(chat.id);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, api, chat.id]);
+
   // Auto-grow.
   useEffect(() => {
     const el = ta.current;
@@ -138,7 +149,7 @@ export const Composer = forwardRef<ComposerHandle, { chat: Chat; busy: boolean }
   };
 
   return (
-    <div className="relative px-4 pb-4 pt-1">
+    <div className="relative px-4 pb-5 pt-1">
       <AnimatePresence>
         {options.length > 0 && (
           <motion.div
@@ -274,7 +285,7 @@ export const Composer = forwardRef<ComposerHandle, { chat: Chat; busy: boolean }
           )}
         </div>
       </div>
-      <div className="mt-1.5 flex justify-between px-1 text-[10.5px] text-faint">
+      <div className="mt-2.5 flex justify-between px-1 text-[10.5px] text-faint">
         <span>
           <Kbd>Enter</Kbd> send · <Kbd>Shift</Kbd>+<Kbd>Enter</Kbd> new line · <Kbd>@</Kbd> mention
         </span>

@@ -113,7 +113,7 @@
   }
   /* Room for the macOS traffic lights over the sidebar (overlay title bar). */
   :root[data-platform="macos"] .traffic-pad {
-    padding-left: 86px;
+    padding-left: 90px;
   }
   .hairline-b {
     border-bottom: 1px solid var(--border);

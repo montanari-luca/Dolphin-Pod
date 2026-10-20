@@ -89,7 +89,11 @@ impl Core {
         tokio::spawn(async move {
             let token = core.chat_token(&chat.id);
             if let Err(e) = core.run_approved_plan(&chat, plan, &token).await {
-                core.pipeline_error(&chat.id, &e);
+                if matches!(e, CoreError::Cancelled) {
+                    core.settle_cancelled(&chat.id);
+                } else {
+                    core.pipeline_error(&chat.id, &e);
+                }
             }
         });
         Ok(())
@@ -105,10 +109,30 @@ impl Core {
 
     async fn pipeline(self: Arc<Self>, chat: Chat, user_msg: Message) {
         let token = self.chat_token(&chat.id);
-        if let Err(e) = self.pipeline_inner(chat.clone(), user_msg, token).await
-            && !matches!(e, CoreError::Cancelled)
-        {
-            self.pipeline_error(&chat.id, &e);
+        if let Err(e) = self.pipeline_inner(chat.clone(), user_msg, token).await {
+            if matches!(e, CoreError::Cancelled) {
+                self.settle_cancelled(&chat.id);
+            } else {
+                self.pipeline_error(&chat.id, &e);
+            }
+        }
+    }
+
+    /// After a stop: every agent in the chat goes idle and a half-finished routing ack is closed,
+    /// so the UI stops showing the chat as busy.
+    pub(crate) fn settle_cancelled(&self, chat_id: &str) {
+        if let Ok(agents) = self.db.list_agents() {
+            for a in agents {
+                self.activity(chat_id, &a.id, AgentActivity::Idle, None);
+            }
+        }
+        if let Ok(msgs) = self.db.list_messages(chat_id, 20) {
+            for mut m in msgs {
+                if m.kind == MessageKind::Ack && m.meta["routing"]["status"] == "routing" {
+                    m.meta["routing"] = json!({ "status": "done", "stopped": true });
+                    let _ = self.save_message(&m);
+                }
+            }
         }
     }
 
@@ -123,7 +147,10 @@ impl Core {
         let members: Vec<Agent> = all_agents.iter().filter(|a| chat.agent_ids.contains(&a.id)).cloned().collect();
         let roger = self.agent_by_slug("roger")?;
         let lincoln = self.agent_by_slug("lincoln")?;
-        let prefs = self.select_preferences(&roger, &user_msg.content).await;
+        let prefs = tokio::select! {
+            p = self.select_preferences(&roger, &user_msg.content) => p,
+            _ = token.cancelled() => return Err(CoreError::Cancelled),
+        };
         let turn = Turn { chat, members, all_agents, user_msg, prefs, token };
 
         // @mentions: straight to the agent, no moderator. Permissions still apply.
@@ -269,7 +296,10 @@ impl Core {
         let all_agents = self.db.list_agents()?;
         let members = all_agents.iter().filter(|a| chat.agent_ids.contains(&a.id)).cloned().collect();
         let roger = self.agent_by_slug("roger")?;
-        let prefs = self.select_preferences(&roger, &plan.content).await;
+        let prefs = tokio::select! {
+            p = self.select_preferences(&roger, &plan.content) => p,
+            _ = token.cancelled() => return Err(CoreError::Cancelled),
+        };
         let user_msg = self.db.list_messages(&chat.id, 50)?.into_iter().rev().find(|m| m.agent_id.is_none()).unwrap_or_else(|| plan.clone());
         let turn = Turn { chat: chat.clone(), members, all_agents, user_msg, prefs, token: token.clone() };
         let brief = format!(
@@ -625,7 +655,10 @@ impl Core {
                 let summary = tools::summarize(&call.name, &call.arguments);
                 let result = if call.name == "generate_image" {
                     generated_image = true;
-                    self.generate_image(agent, msg, call.arguments["prompt"].as_str().unwrap_or_default()).await
+                    tokio::select! {
+                        r = self.generate_image(agent, msg, call.arguments["prompt"].as_str().unwrap_or_default()) => r,
+                        _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
+                    }
                 } else if let Some(ws) = &workspace {
                     tokio::select! {
                         r = tools::execute(std::path::Path::new(ws), level, &call.name, &call.arguments) => r,

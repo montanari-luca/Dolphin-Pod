@@ -2,7 +2,7 @@ import * as RDialog from "@radix-ui/react-dialog";
 import * as RMenu from "@radix-ui/react-dropdown-menu";
 import { AnimatePresence, motion } from "motion/react";
 import { Loader2, X } from "lucide-react";
-import { forwardRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
+import { forwardRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
 
 // ---------------------------------------------------------------- buttons
@@ -156,6 +156,47 @@ export function Kbd({ children }: { children: ReactNode }) {
 }
 
 // ---------------------------------------------------------------- dialog
+
+/** Modal confirmation for destructive actions. `onConfirm` may be async; the dialog closes once it settles. */
+export function ConfirmDialog({ open, onOpenChange, title, description, confirmLabel, onConfirm }: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  title: ReactNode;
+  description: ReactNode;
+  confirmLabel: string;
+  onConfirm: () => void | Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => !busy && onOpenChange(o)}
+      title={title}
+      description={description}
+      width={420}
+      footer={
+        <>
+          <Button variant="ghost" autoFocus onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
+          <Button
+            variant="danger"
+            loading={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onConfirm();
+              } finally {
+                setBusy(false);
+                onOpenChange(false);
+              }
+            }}
+          >
+            {confirmLabel}
+          </Button>
+        </>
+      }
+    />
+  );
+}
 
 export function Dialog({ open, onOpenChange, title, description, children, footer, width = 520 }: {
   open: boolean;

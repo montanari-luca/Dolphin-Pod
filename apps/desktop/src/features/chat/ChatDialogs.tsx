@@ -2,7 +2,7 @@ import { Brush, Check, FolderOpen, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Agent, Chat } from "@dolphin/shared";
 import { AgentAvatar } from "@/components/agent";
-import { Button, Dialog, Field, Input, Row, Switch } from "@/components/ui";
+import { Button, ConfirmDialog, Dialog, Field, Input, Row, Switch } from "@/components/ui";
 import { CHAT_ICONS } from "@/lib/chatIcons";
 import { cn } from "@/lib/cn";
 import { useApp } from "@/store/app";
@@ -120,11 +120,11 @@ export function ChatSettingsDialog({ chat, open, onOpenChange }: { chat: Chat; o
   const run = useApp((s) => s.run);
   const globalCleanup = useApp((s) => s.settings["cleanup.enabled"] !== false);
   const [draft, setDraft] = useState<Chat>(chat);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirming, setConfirming] = useState<"clean" | "delete" | null>(null);
   useEffect(() => {
     if (open) {
       setDraft(chat);
-      setConfirmDelete(false);
+      setConfirming(null);
     }
   }, [open, chat]);
   const specialists = draft.agentIds.filter((id) => agents.find((a) => a.id === id)?.role === "specialist");
@@ -196,34 +196,50 @@ export function ChatSettingsDialog({ chat, open, onOpenChange }: { chat: Chat; o
         <div className="flex items-center justify-between gap-3 rounded-lg border border-danger/25 bg-danger/5 px-3.5 py-3">
           <div className="text-[12.5px] text-muted">Clean all messages now, or delete this chat.</div>
           <div className="flex gap-2">
-            <Button size="sm" onClick={async () => api && (await run(api.cleanChat(chat.id), "Chat cleaned"))}>
+            <Button size="sm" onClick={() => setConfirming("clean")}>
               <Brush className="size-3.5" /> Clean now
             </Button>
-            {confirmDelete ? (
-              <Button
-                size="sm"
-                variant="danger"
-                onClick={async () => {
-                  if (!api) return;
-                  try {
-                    await api.deleteChat(chat.id);
-                    onOpenChange(false);
-                    useApp.getState().toast("success", "Chat deleted");
-                  } catch (e) {
-                    useApp.getState().toast("error", String(e));
-                  }
-                }}
-              >
-                Confirm delete
-              </Button>
-            ) : (
-              <Button size="sm" variant="danger" onClick={() => setConfirmDelete(true)}>
-                <Trash2 className="size-3.5" /> Delete
-              </Button>
-            )}
+            <Button size="sm" variant="danger" onClick={() => setConfirming("delete")}>
+              <Trash2 className="size-3.5" /> Delete
+            </Button>
           </div>
         </div>
       </div>
+      <CleanChatDialog chat={chat} open={confirming === "clean"} onOpenChange={(o) => !o && setConfirming(null)} />
+      <ConfirmDialog
+        open={confirming === "delete"}
+        onOpenChange={(o) => !o && setConfirming(null)}
+        title={`Delete ${chat.name}?`}
+        description="This permanently deletes the chat, its messages and attachments. This can't be undone."
+        confirmLabel="Delete chat"
+        onConfirm={async () => {
+          try {
+            await api?.deleteChat(chat.id);
+            onOpenChange(false);
+            useApp.getState().toast("success", "Chat deleted");
+          } catch (e) {
+            useApp.getState().toast("error", String(e));
+          }
+        }}
+      />
     </Dialog>
+  );
+}
+
+/** Confirmation before wiping every message in a chat. */
+export function CleanChatDialog({ chat, open, onOpenChange }: { chat: Chat; open: boolean; onOpenChange: (o: boolean) => void }) {
+  const api = useApp((s) => s.api);
+  const run = useApp((s) => s.run);
+  return (
+    <ConfirmDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={`Clean ${chat.name}?`}
+      description="This removes every message in this chat. This can't be undone."
+      confirmLabel="Clean chat"
+      onConfirm={async () => {
+        if (api) await run(api.cleanChat(chat.id), "Chat cleaned");
+      }}
+    />
   );
 }

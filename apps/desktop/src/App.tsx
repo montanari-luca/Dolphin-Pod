@@ -7,6 +7,7 @@ import { Welcome } from "@/features/onboarding/Welcome";
 import { SettingsView } from "@/features/settings/SettingsView";
 import { Sidebar } from "@/features/sidebar/Sidebar";
 import { useApplyAppearance } from "@/lib/theme";
+import { useWindowDrag } from "@/lib/windowDrag";
 import { useApp } from "@/store/app";
 
 export default function App() {
@@ -17,6 +18,7 @@ export default function App() {
   const info = useApp((s) => s.info);
   const chat = useApp((s) => s.chats.find((c) => c.id === s.activeChatId));
   useApplyAppearance();
+  useWindowDrag();
 
   useEffect(() => {
     void boot();

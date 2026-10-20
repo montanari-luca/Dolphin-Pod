@@ -7,7 +7,7 @@ import { Badge, Dialog, EmptyState, IconButton } from "@/components/ui";
 import { chatIcon } from "@/lib/chatIcons";
 import { formatTime } from "@/lib/format";
 import { safeGet, safeSet, useApp } from "@/store/app";
-import { ChatSettingsDialog } from "./ChatDialogs";
+import { ChatSettingsDialog, CleanChatDialog } from "./ChatDialogs";
 import { Composer, type ComposerHandle } from "./Composer";
 import { MembersPanel } from "./MembersPanel";
 import { MessageList } from "./MessageList";
@@ -15,12 +15,12 @@ import { MessageList } from "./MessageList";
 export function ChatView({ chat }: { chat: Chat }) {
   const api = useApp((s) => s.api);
   const agents = useApp((s) => s.agents);
-  const run = useApp((s) => s.run);
   const busy = useApp(
     (s) => Object.values(s.activity[chat.id] ?? {}).some((a) => a.activity !== "idle") || (s.messages[chat.id] ?? []).some((m) => m.status === "streaming"),
   );
   const composer = useRef<ComposerHandle>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [cleanOpen, setCleanOpen] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
   const [showMembers, setShowMembers] = useState(() => safeGet("dp.members") !== "0");
   const [dragging, setDragging] = useState(false);
@@ -84,7 +84,7 @@ export function ChatView({ chat }: { chat: Chat }) {
             </button>
           )}
           <div className="no-drag ml-auto flex items-center gap-0.5">
-            <IconButton label="Clean chat" onClick={() => api && run(api.cleanChat(chat.id), "Chat cleaned")}>
+            <IconButton label="Clean chat" onClick={() => setCleanOpen(true)}>
               <Brush className="size-[17px]" />
             </IconButton>
             <IconButton label="Action log" onClick={() => setLogOpen(true)}>
@@ -129,6 +129,7 @@ export function ChatView({ chat }: { chat: Chat }) {
       </AnimatePresence>
 
       <ChatSettingsDialog chat={chat} open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <CleanChatDialog chat={chat} open={cleanOpen} onOpenChange={setCleanOpen} />
       <ActionLogDialog chat={chat} open={logOpen} onOpenChange={setLogOpen} />
     </div>
   );
