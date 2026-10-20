@@ -50,7 +50,7 @@ export function AutomationsView() {
           <Button
             variant="primary"
             size="sm"
-            onClick={() => setEditing({ id: "", chatId: chats[0]?.id ?? "", text: "", timeOfDay: "09:00", weekdays: [], enabled: true, lastRunDate: null, updatedAt: 0 })}
+            onClick={() => setEditing({ id: "", chatId: chats[0]?.id ?? "", text: "", timeOfDay: "09:00", weekdays: [], enabled: true, lastRunDate: null, runnerDeviceId: null, updatedAt: 0 })}
           >
             <Plus className="size-3.5" /> New automation
           </Button>

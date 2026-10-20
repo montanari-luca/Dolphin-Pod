@@ -6,6 +6,7 @@ pub mod attachments;
 pub mod catalog;
 pub mod context;
 pub mod core;
+pub mod crypto;
 pub mod db;
 mod engine;
 pub mod error;
