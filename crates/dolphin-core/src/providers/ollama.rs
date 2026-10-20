@@ -63,6 +63,8 @@ pub(crate) fn build_body(req: &ChatRequest) -> Value {
     let think = match &req.effort {
         Some(EffortValue::Level(l)) => json!(l),
         Some(EffortValue::Toggle(b)) => json!(b),
+        // Internal calls (summaries, classification) do not need a thinking pass.
+        None if !req.want_reasoning => json!(false),
         _ => json!(true),
     };
     let mut body = json!({ "model": req.model, "messages": messages, "stream": true, "think": think });
