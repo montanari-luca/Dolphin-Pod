@@ -27,6 +27,11 @@ export function ChatView({ chat }: { chat: Chat }) {
   const Icon = chatIcon(chat.icon);
   const members = agents.filter((a) => chat.agentIds.includes(a.id) && a.role !== "orchestrator");
 
+  const toggleMembers = () => {
+    setShowMembers((v) => !v);
+    safeSet("dp.members", showMembers ? "0" : "1");
+  };
+
   // Native file drops (Tauri) arrive as paths.
   useEffect(() => {
     if (!api?.isTauri) return;
@@ -95,10 +100,7 @@ export function ChatView({ chat }: { chat: Chat }) {
             </IconButton>
             <IconButton
               label={showMembers ? "Hide members" : "Show members"}
-              onClick={() => {
-                setShowMembers((v) => !v);
-                safeSet("dp.members", showMembers ? "0" : "1");
-              }}
+              onClick={toggleMembers}
             >
               {showMembers ? <PanelRightClose className="size-[17px]" /> : <PanelRightOpen className="size-[17px]" />}
             </IconButton>
@@ -106,7 +108,12 @@ export function ChatView({ chat }: { chat: Chat }) {
         </header>
 
         <MessageList chat={chat} onSuggest={(t) => composer.current?.setText(t)} />
-        <Composer ref={composer} chat={chat} busy={busy} />
+        <Composer
+          ref={composer}
+          chat={chat}
+          busy={busy}
+          actions={{ clear: () => setCleanOpen(true), openChatSettings: () => setSettingsOpen(true), openActionLog: () => setLogOpen(true), toggleMembers }}
+        />
 
         <AnimatePresence>
           {dragging && (

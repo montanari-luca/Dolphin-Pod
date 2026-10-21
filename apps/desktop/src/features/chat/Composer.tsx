@@ -1,11 +1,12 @@
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUp, FileText, Image as ImageIcon, Loader2, Paperclip, Square, X } from "lucide-react";
+import { ArrowUp, Bot, Brush, Clock, FileText, Image as ImageIcon, Loader2, Paperclip, PanelRight, ScrollText, Settings, Settings2, Square, X, type LucideIcon } from "lucide-react";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { Attachment, Chat } from "@dolphin/shared";
 import { AgentAvatar, AgentHoverCard, AgentNameText, SPECIALTY_LABEL } from "@/components/agent";
 import { IconButton, Kbd } from "@/components/ui";
 import { errorText } from "@/ipc/api";
 import { cn } from "@/lib/cn";
+import { exactCommand, filterCommands, slashAt, type CommandId } from "@/lib/commands";
 import { formatBytes } from "@/lib/format";
 import { filterAgents, insertMention, mentionAt } from "@/lib/mentions";
 import { safeGet, safeSet, useApp } from "@/store/app";
@@ -17,9 +18,29 @@ export interface ComposerHandle {
   focus(): void;
 }
 
+/** Things a slash command can ask the surrounding chat view to do. */
+export interface ComposerActions {
+  clear(): void;
+  openChatSettings(): void;
+  openActionLog(): void;
+  toggleMembers(): void;
+}
+
+const COMMAND_ICONS: Record<CommandId, LucideIcon> = {
+  clear: Brush,
+  "chat-settings": Settings2,
+  "action-log": ScrollText,
+  members: PanelRight,
+  stop: Square,
+  attach: Paperclip,
+  settings: Settings,
+  agents: Bot,
+  automations: Clock,
+};
+
 type Staged = { key: string; name: string; size: number; kind: string; attachment?: Attachment; error?: string };
 
-export const Composer = forwardRef<ComposerHandle, { chat: Chat; busy: boolean }>(function Composer({ chat, busy }, ref) {
+export const Composer = forwardRef<ComposerHandle, { chat: Chat; busy: boolean; actions: ComposerActions }>(function Composer({ chat, busy, actions }, ref) {
   const api = useApp((s) => s.api);
   const agents = useApp((s) => s.agents);
   const toast = useApp((s) => s.toast);
@@ -62,7 +83,9 @@ export const Composer = forwardRef<ComposerHandle, { chat: Chat; busy: boolean }
   const members = useMemo(() => agents.filter((a) => chat.agentIds.includes(a.id)), [agents, chat.agentIds]);
   const mention = menuDismissed ? null : mentionAt(text, caret);
   const options = mention ? filterAgents(members, mention.query) : [];
-  useEffect(() => setMenuIndex(0), [mention?.query]);
+  const slash = menuDismissed || mention ? null : slashAt(text, caret);
+  const commands = slash ? filterCommands(slash.query, busy) : [];
+  useEffect(() => setMenuIndex(0), [mention?.query, slash?.query]);
 
   const stageBytes = useCallback(
     async (name: string, mime: string, bytes: Uint8Array, kind: string) => {
@@ -121,8 +144,38 @@ export const Composer = forwardRef<ComposerHandle, { chat: Chat; busy: boolean }
   const pending = staged.some((s) => !s.attachment && !s.error);
   const canSend = (text.trim().length > 0 || staged.some((s) => s.attachment)) && !pending && !sending;
 
+  const attach = async () => {
+    if (!api) return;
+    if (api.isTauri) addPaths(await api.pickFiles());
+    else {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.multiple = true;
+      input.onchange = () => addFiles([...(input.files ?? [])]);
+      input.click();
+    }
+  };
+
+  const runCommand = (id: CommandId) => {
+    setText("");
+    setCaret(0);
+    switch (id) {
+      case "clear": return actions.clear();
+      case "chat-settings": return actions.openChatSettings();
+      case "action-log": return actions.openActionLog();
+      case "members": return actions.toggleMembers();
+      case "stop": return void api?.stopChat(chat.id);
+      case "attach": return void attach();
+      case "settings": return useApp.getState().setView("settings");
+      case "agents": return useApp.getState().setView("settings", "agents");
+      case "automations": return useApp.getState().setView("automations");
+    }
+  };
+
   const send = async () => {
     if (!api || !canSend) return;
+    const command = exactCommand(text, busy);
+    if (command && staged.length === 0) return runCommand(command.id);
     setSending(true);
     const ids = staged.filter((s) => s.attachment).map((s) => s.attachment!.id);
     try {
@@ -148,8 +201,48 @@ export const Composer = forwardRef<ComposerHandle, { chat: Chat; busy: boolean }
     });
   };
 
+  const chooseCommand = (i: number) => {
+    const c = commands[i];
+    if (!c) return;
+    runCommand(c.id);
+  };
+
   return (
     <div className="relative px-4 pb-5 pt-1">
+      <AnimatePresence>
+        {commands.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 6, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4 }}
+            transition={{ duration: 0.14 }}
+            className="glass-float absolute bottom-full left-4 z-30 mb-2 w-[26rem] max-w-[calc(100%-2rem)] overflow-hidden rounded-lg p-1"
+            role="listbox"
+          >
+            <div className="px-2.5 pt-1.5 pb-1 text-[10.5px] font-semibold uppercase tracking-wider text-faint">Commands</div>
+            {commands.map((c, i) => {
+              const Icon = COMMAND_ICONS[c.id];
+              return (
+                <button
+                  key={c.id}
+                  role="option"
+                  aria-selected={i === menuIndex}
+                  onMouseEnter={() => setMenuIndex(i)}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    chooseCommand(i);
+                  }}
+                  className={cn("flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left", i === menuIndex ? "bg-active" : "")}
+                >
+                  <Icon className="size-4 shrink-0 text-muted" />
+                  <span className="whitespace-nowrap font-mono text-[12.5px] text-fg">/{c.name}</span>
+                  <span className="ml-auto truncate text-[11px] text-faint">{c.description}</span>
+                </button>
+              );
+            })}
+          </motion.div>
+        )}
+      </AnimatePresence>
       <AnimatePresence>
         {options.length > 0 && (
           <motion.div
@@ -201,17 +294,7 @@ export const Composer = forwardRef<ComposerHandle, { chat: Chat; busy: boolean }
         <div className="flex items-end gap-1.5 p-2">
           <IconButton
             label="Attach files"
-            onClick={async () => {
-              if (!api) return;
-              if (api.isTauri) addPaths(await api.pickFiles());
-              else {
-                const input = document.createElement("input");
-                input.type = "file";
-                input.multiple = true;
-                input.onchange = () => addFiles([...(input.files ?? [])]);
-                input.click();
-              }
-            }}
+            onClick={() => void attach()}
           >
             <Paperclip className="size-[17px]" />
           </IconButton>
@@ -219,7 +302,7 @@ export const Composer = forwardRef<ComposerHandle, { chat: Chat; busy: boolean }
             ref={ta}
             rows={1}
             value={text}
-            placeholder={`Message ${chat.name}  ·  @ to mention an agent`}
+            placeholder={`Message ${chat.name}  ·  @ mention  ·  / commands`}
             className="max-h-[40vh] min-h-[34px] flex-1 resize-none bg-transparent px-1.5 py-[7px] text-[14px] leading-[20px] text-fg placeholder:text-faint outline-none"
             onChange={(e) => {
               setText(e.target.value);
@@ -232,6 +315,19 @@ export const Composer = forwardRef<ComposerHandle, { chat: Chat; busy: boolean }
                 if (e.key === "ArrowDown") return (e.preventDefault(), setMenuIndex((i) => (i + 1) % options.length));
                 if (e.key === "ArrowUp") return (e.preventDefault(), setMenuIndex((i) => (i - 1 + options.length) % options.length));
                 if (e.key === "Enter" || e.key === "Tab") return (e.preventDefault(), choose(menuIndex));
+                if (e.key === "Escape") return (e.preventDefault(), setMenuDismissed(true));
+              }
+              if (commands.length > 0) {
+                if (e.key === "ArrowDown") return (e.preventDefault(), setMenuIndex((i) => (i + 1) % commands.length));
+                if (e.key === "ArrowUp") return (e.preventDefault(), setMenuIndex((i) => (i - 1 + commands.length) % commands.length));
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) return (e.preventDefault(), chooseCommand(menuIndex));
+                if (e.key === "Tab") {
+                  e.preventDefault();
+                  const t = `/${commands[menuIndex].name}`;
+                  setText(t);
+                  setCaret(t.length);
+                  return;
+                }
                 if (e.key === "Escape") return (e.preventDefault(), setMenuDismissed(true));
               }
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -287,7 +383,7 @@ export const Composer = forwardRef<ComposerHandle, { chat: Chat; busy: boolean }
       </div>
       <div className="mt-2.5 flex justify-between px-1 text-[10.5px] text-faint">
         <span>
-          <Kbd>Enter</Kbd> send · <Kbd>Shift</Kbd>+<Kbd>Enter</Kbd> new line · <Kbd>@</Kbd> mention
+          <Kbd>Enter</Kbd> send · <Kbd>Shift</Kbd>+<Kbd>Enter</Kbd> new line · <Kbd>@</Kbd> mention · <Kbd>/</Kbd> commands
         </span>
         {busy && <span>Press <Kbd>Esc</Kbd> to stop</span>}
       </div>
