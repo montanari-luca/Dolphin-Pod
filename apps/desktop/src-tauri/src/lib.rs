@@ -140,6 +140,16 @@ fn resolve_confirmation(core: State<CoreRef>, id: String, accepted: bool) {
     core.resolve_confirmation(&id, accepted)
 }
 
+#[tauri::command]
+fn answer_question(core: State<CoreRef>, id: String, answer: String, custom: bool) {
+    core.answer_question(&id, &answer, custom)
+}
+
+#[tauri::command]
+fn skip_question(core: State<CoreRef>, id: String) {
+    core.skip_question(&id)
+}
+
 // ------------------------------------------------------------------ the user's roles
 
 #[tauri::command]
@@ -422,6 +432,8 @@ pub fn run() {
             action_log,
             usage_all,
             resolve_confirmation,
+            answer_question,
+            skip_question,
             list_roles,
             save_role,
             delete_role,

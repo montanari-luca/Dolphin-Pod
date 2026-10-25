@@ -41,6 +41,57 @@ pub fn delegate_spec(delegates: &[crate::model::Agent]) -> ToolSpec {
     )
 }
 
+pub const ASK_TOOL: &str = "ask_user";
+pub const MAX_QUESTION_OPTIONS: usize = 4;
+
+/// The question tool. The UI adds its own "Other" field, so the agent only lists real choices.
+pub fn ask_spec() -> ToolSpec {
+    spec(
+        ASK_TOOL,
+        "Pause and ask the user a multiple-choice question when you are blocked or an ambiguity would change the work. The user picks one of your options or writes their own answer. Ask one question at a time and only what you cannot find out yourself.",
+        json!({ "type": "object", "properties": {
+            "question": { "type": "string", "description": "A short, specific question." },
+            "options": {
+                "type": "array", "minItems": 1, "maxItems": MAX_QUESTION_OPTIONS,
+                "description": "1 to 4 distinct choices. Do not add an 'Other' option; the user can always type their own answer.",
+                "items": { "type": "object", "properties": {
+                    "label": { "type": "string", "description": "The choice, a few words." },
+                    "description": { "type": "string", "description": "Optional one-line detail or trade-off." }
+                }, "required": ["label"] }
+            }
+        }, "required": ["question", "options"] }),
+    )
+}
+
+/// Validate an `ask_user` call: a question and 1 to 4 labelled options.
+pub fn parse_question(args: &Value) -> Result<(String, Vec<crate::events::QuestionOption>)> {
+    if args.get("_invalid_json").is_some() {
+        return Err(CoreError::invalid("the tool arguments were not valid JSON; send them again"));
+    }
+    let question = truncate(s(args, "question")?.trim(), 400);
+    if question.is_empty() {
+        return Err(CoreError::invalid("'question' is empty"));
+    }
+    let raw = args["options"].as_array().ok_or_else(|| CoreError::invalid("missing 'options'"))?;
+    if raw.is_empty() || raw.len() > MAX_QUESTION_OPTIONS {
+        return Err(CoreError::invalid(format!("give 1 to {MAX_QUESTION_OPTIONS} options")));
+    }
+    let mut options = Vec::new();
+    for o in raw {
+        // Some models send plain strings instead of objects.
+        let (label, description) = match o.as_str() {
+            Some(l) => (l, None),
+            None => (o["label"].as_str().unwrap_or(""), o["description"].as_str().map(|d| truncate(d.trim(), 200)).filter(|d| !d.is_empty())),
+        };
+        let label = truncate(label.trim(), 120);
+        if label.is_empty() {
+            return Err(CoreError::invalid("every option needs a 'label'"));
+        }
+        options.push(crate::events::QuestionOption { label, description });
+    }
+    Ok((question, options))
+}
+
 pub fn image_tool() -> ToolSpec {
     spec(
         "generate_image",
@@ -163,6 +214,7 @@ pub fn summarize(name: &str, args: &Value) -> String {
         "web_search" => format!("Searched the web for \"{}\"", truncate(&a("query"), 60)),
         "fetch_page" => format!("Opened {}", truncate(&a("url"), 80)),
         DELEGATE_TOOL => format!("Asked {}: {}", a("agent"), truncate(&a("task"), 70)),
+        ASK_TOOL => format!("Asked you: {}", truncate(&a("question"), 80)),
         "git" => format!("Ran `git {}`", truncate(&crate::gittool::parse_args(args).map(|a| crate::gittool::normalize(&a)).unwrap_or_default(), 80)),
         "generate_image" => "Generated an image".into(),
         "context_retrieve" => "Re-read a compressed result".into(),
@@ -344,6 +396,20 @@ mod tests {
         assert!(errs[0].contains("local network") && errs[1].contains("local network"));
         assert!(errs[2].contains("not a valid URL"));
         assert!(errs[3].contains("unknown tool"));
+    }
+
+    #[test]
+    fn question_needs_one_to_four_labelled_options() {
+        let (q, o) = parse_question(&json!({ "question": " Which? ", "options": [{ "label": "A", "description": "first" }, "B"] })).unwrap();
+        assert_eq!(q, "Which?");
+        assert_eq!((o[0].label.as_str(), o[0].description.as_deref()), ("A", Some("first")));
+        assert_eq!((o[1].label.as_str(), o[1].description.as_deref()), ("B", None));
+        let five: Vec<Value> = (0..5).map(|i| json!({ "label": format!("o{i}") })).collect();
+        assert!(parse_question(&json!({ "question": "x", "options": five })).is_err());
+        assert!(parse_question(&json!({ "question": "x", "options": [] })).is_err());
+        assert!(parse_question(&json!({ "question": "x", "options": [{ "label": " " }] })).is_err());
+        assert!(parse_question(&json!({ "question": " ", "options": ["A"] })).is_err());
+        assert!(parse_question(&json!({ "options": ["A"] })).is_err());
     }
 
     #[test]

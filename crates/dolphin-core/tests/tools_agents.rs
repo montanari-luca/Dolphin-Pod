@@ -331,3 +331,107 @@ async fn a_delegate_never_has_more_permission_than_the_caller() {
     wait_for(&p.core, &coding.id, |m| m.iter().filter(|m| m.agent_id.as_deref() == Some(&agent(&p.core, "robert").id) && m.status == MessageStatus::Done).count() == 2).await;
     assert!(status().contains("A  new.txt"), "{}", status());
 }
+
+fn ask_call(id: &str) -> ProviderEvent {
+    call(id, "ask_user", json!({ "question": "Which colour?", "options": [{ "label": "Red", "description": "warm" }, { "label": "Blue" }] }))
+}
+
+async fn next_question(rx: &mut tokio::sync::broadcast::Receiver<dolphin_core::events::CoreEvent>) -> (String, String, Vec<dolphin_core::events::QuestionOption>) {
+    use dolphin_core::events::CoreEvent;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Ok(CoreEvent::QuestionRequest { id, question, options, .. }) = rx.recv().await {
+                return (id, question, options);
+            }
+        }
+    })
+    .await
+    .expect("a question was asked")
+}
+
+#[tokio::test]
+async fn agent_asks_the_user_and_continues_with_the_answer() {
+    let p = pod(&["rick"], |req| if has_tool_results(req) { vec![text(&format!("Noted: {}", tool_results(req).join("|")))] } else { vec![ask_call("q1")] });
+    let coding = chat(&p.core, "Coding");
+    let mut rx = p.core.subscribe();
+    p.core.send_message(&coding.id, "@Rick pick a colour for me", vec![]).await.unwrap();
+
+    let (id, question, options) = next_question(&mut rx).await;
+    assert_eq!(question, "Which colour?");
+    assert_eq!(options.iter().map(|o| o.label.as_str()).collect::<Vec<_>>(), ["Red", "Blue"]);
+    assert_eq!(options[0].description.as_deref(), Some("warm"));
+    // The run is paused on the question.
+    assert!(msgs_of(&p.core, &coding.id, "rick").iter().all(|m| m.status != MessageStatus::Done));
+
+    p.core.answer_question(&id, "Teal", true);
+    wait_for(&p.core, &coding.id, done_by(&p.core, "rick")).await;
+    let rick = &msgs_of(&p.core, &coding.id, "rick")[0];
+    assert_eq!(rick.content, "Noted: The user answered in their own words: \"Teal\"");
+    assert_eq!(rick.meta["tools"][0]["summary"], "Asked you: Which colour?");
+    assert_eq!(rick.meta["tools"][0]["answer"], "The user answered in their own words: \"Teal\"");
+}
+
+#[tokio::test]
+async fn skipping_or_choosing_answers_differently() {
+    let p = pod(&["rick"], |req| if has_tool_results(req) { vec![text(&tool_results(req).join("|"))] } else { vec![ask_call("q1")] });
+    let coding = chat(&p.core, "Coding");
+    let mut rx = p.core.subscribe();
+    p.core.send_message(&coding.id, "@Rick one", vec![]).await.unwrap();
+    let (id, ..) = next_question(&mut rx).await;
+    p.core.answer_question(&id, "Red", false);
+    wait_for(&p.core, &coding.id, done_by(&p.core, "rick")).await;
+    assert_eq!(msgs_of(&p.core, &coding.id, "rick")[0].content, "The user chose: \"Red\"");
+
+    p.core.send_message(&coding.id, "@Rick two", vec![]).await.unwrap();
+    let (id, ..) = next_question(&mut rx).await;
+    p.core.skip_question(&id);
+    wait_for(&p.core, &coding.id, |m| m.iter().filter(|m| m.agent_id.is_some() && m.status == MessageStatus::Done && m.kind == MessageKind::Text).count() == 2).await;
+    assert!(msgs_of(&p.core, &coding.id, "rick")[1].content.starts_with("The user skipped this question"));
+}
+
+#[tokio::test]
+async fn stopping_the_chat_closes_a_pending_question() {
+    use dolphin_core::events::CoreEvent;
+    let p = pod(&["rick"], |_| vec![ask_call("q1")]);
+    let coding = chat(&p.core, "Coding");
+    let mut rx = p.core.subscribe();
+    p.core.send_message(&coding.id, "@Rick pick", vec![]).await.unwrap();
+    let (id, ..) = next_question(&mut rx).await;
+    p.core.stop(&coding.id);
+    let closed = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Ok(CoreEvent::QuestionClosed { id: closed }) = rx.recv().await {
+                return closed;
+            }
+        }
+    })
+    .await
+    .expect("the question was closed");
+    assert_eq!(closed, id);
+    wait_for(&p.core, &coding.id, |m| m.iter().any(|m| m.agent_id.is_some() && m.status == MessageStatus::Cancelled)).await;
+}
+
+#[tokio::test]
+async fn the_question_tool_is_not_offered_where_nobody_can_answer() {
+    let p = pod(&["rick", "robert"], |req| match who(req).as_str() {
+        "Rick" if !has_tool_results(req) && user_said(req, "delegate") => vec![delegate_call("d1", "Robert", "status please")],
+        "Rick" if has_tool_results(req) => vec![text("done")],
+        _ => vec![text("ok")],
+    });
+    let coding = chat(&p.core, "Coding");
+    // An automation run, then a normal run that delegates.
+    p.core.send_message_with_meta(&coding.id, "@Rick scheduled hello", vec![], json!({ "automation": "a1" })).await.unwrap();
+    wait_for(&p.core, &coding.id, done_by(&p.core, "rick")).await;
+    {
+        let reqs = p.provider.requests.lock().unwrap();
+        assert!(reqs.iter().all(|r| r.tools.iter().all(|t| t.name != "ask_user")), "automations cannot ask");
+    }
+    p.provider.requests.lock().unwrap().clear();
+    p.core.send_message(&coding.id, "@Rick delegate this", vec![]).await.unwrap();
+    wait_for(&p.core, &coding.id, |m| m.iter().filter(|m| m.agent_id.is_some() && m.status == MessageStatus::Done && m.kind == MessageKind::Text).count() >= 3).await;
+    let reqs = p.provider.requests.lock().unwrap();
+    for r in reqs.iter() {
+        let has = r.tools.iter().any(|t| t.name == "ask_user");
+        assert_eq!(has, who(r) == "Rick", "only the top-level agent can ask ({})", who(r));
+    }
+}

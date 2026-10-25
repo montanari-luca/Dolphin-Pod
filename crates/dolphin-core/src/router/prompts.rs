@@ -58,6 +58,8 @@ pub struct AgentPromptInput<'a> {
     pub permission: PermissionLevel,
     pub has_image_tool: bool,
     pub has_web: bool,
+    /// Whether the ask_user tool is offered.
+    pub has_ask: bool,
     /// Colleagues this agent may hand work to with the delegate_to_agent tool.
     pub delegates: &'a [Agent],
     pub preferences: &'a [String],
@@ -102,6 +104,9 @@ pub fn agent_system(i: &AgentPromptInput) -> String {
             s.push_str(&format!("\n- {}: {}", d.name, when));
         }
         s.push_str("\nPush, pull and destructive git commands always need the user's confirmation; if your colleague reports that, pass the question on to the user.");
+    }
+    if i.has_ask {
+        s.push_str("\n\nYou can pause and ask the user a multiple-choice question with the ask_user tool (the user can also type their own answer). Use it only when you are blocked or an ambiguity would materially change the work; ask one question at a time, offer 2 to 4 concrete options, and never ask what you can find out yourself or what a sensible default covers.");
     }
     if !i.has_web && i.agent.specialty == "researcher" {
         s.push_str("\n\nWeb access is unavailable (it is turned off, or your model has no tool support), so you cannot search or open pages. Say so, tell the user they can enable \"Web access for agents\" in Settings or pick a model with tools, and offer what you can say from your own knowledge, clearly labelled as unverified.");

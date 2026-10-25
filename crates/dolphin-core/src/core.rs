@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::db::Db;
 use crate::error::{CoreError, Result};
-use crate::events::{AgentActivity, CoreEvent, ToastLevel};
+use crate::events::{AgentActivity, CoreEvent, QuestionOption, ToastLevel};
 use crate::model::*;
 use crate::providers::{Provider, ProviderRegistry};
 use crate::secrets::{SecretStore, provider_key_name};
@@ -29,6 +29,7 @@ pub struct Core {
     /// Cancellation per chat: stopping a chat cancels every run in it.
     pub(crate) chat_tokens: Mutex<HashMap<String, CancellationToken>>,
     pending_confirms: Mutex<HashMap<String, oneshot::Sender<bool>>>,
+    pending_questions: Mutex<HashMap<String, oneshot::Sender<QuestionAnswer>>>,
     pub(crate) sync: crate::sync::manager::SyncRuntime,
     pub(crate) remote: crate::remote::RemoteRuntime,
     platform: Mutex<Platform>,
@@ -36,6 +37,25 @@ pub struct Core {
 }
 
 pub type CoreRef = Arc<Core>;
+
+/// What the user did with a question an agent asked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QuestionAnswer {
+    Choice(String),
+    Custom(String),
+    Skipped,
+}
+
+impl QuestionAnswer {
+    /// The tool result the asking agent reads.
+    pub fn for_agent(&self) -> String {
+        match self {
+            Self::Choice(a) => format!("The user chose: \"{a}\""),
+            Self::Custom(a) => format!("The user answered in their own words: \"{a}\""),
+            Self::Skipped => "The user skipped this question; use your best judgment.".into(),
+        }
+    }
+}
 
 impl Core {
     pub fn open(data_dir: &Path, secrets: Arc<dyn SecretStore>) -> Result<CoreRef> {
@@ -59,6 +79,7 @@ impl Core {
             data_dir: data_dir.to_path_buf(),
             chat_tokens: Mutex::new(HashMap::new()),
             pending_confirms: Mutex::new(HashMap::new()),
+            pending_questions: Mutex::new(HashMap::new()),
             sync: Default::default(),
             remote: Default::default(),
             platform: Mutex::new(Platform::Desktop),
@@ -116,6 +137,47 @@ impl Core {
     pub fn resolve_confirmation(&self, id: &str, accepted: bool) {
         if let Some(tx) = self.pending_confirms.lock().unwrap().remove(id) {
             let _ = tx.send(accepted);
+        }
+    }
+
+    /// Pause a run and ask the user a question. There is no timeout: it resolves when the user answers or
+    /// skips, and fails with `Cancelled` when the chat is stopped. The panel is always closed afterwards.
+    pub(crate) async fn ask(
+        &self,
+        chat_id: &str,
+        agent_id: &str,
+        question: &str,
+        options: Vec<QuestionOption>,
+        token: &CancellationToken,
+    ) -> Result<QuestionAnswer> {
+        let id = new_id();
+        let (tx, rx) = oneshot::channel();
+        self.pending_questions.lock().unwrap().insert(id.clone(), tx);
+        self.emit(CoreEvent::QuestionRequest { id: id.clone(), chat_id: chat_id.into(), agent_id: agent_id.into(), question: question.into(), options });
+        let res = tokio::select! {
+            r = rx => Some(r.unwrap_or(QuestionAnswer::Skipped)),
+            _ = token.cancelled() => None,
+        };
+        self.pending_questions.lock().unwrap().remove(&id);
+        self.emit(CoreEvent::QuestionClosed { id });
+        res.ok_or(CoreError::Cancelled)
+    }
+
+    /// The user's answer to a pending question: one of the offered labels, or their own words when `custom`.
+    pub fn answer_question(&self, id: &str, answer: &str, custom: bool) {
+        let answer = answer.trim();
+        if answer.is_empty() {
+            return self.skip_question(id);
+        }
+        let answer = if custom { QuestionAnswer::Custom(answer.into()) } else { QuestionAnswer::Choice(answer.into()) };
+        if let Some(tx) = self.pending_questions.lock().unwrap().remove(id) {
+            let _ = tx.send(answer);
+        }
+    }
+
+    pub fn skip_question(&self, id: &str) {
+        if let Some(tx) = self.pending_questions.lock().unwrap().remove(id) {
+            let _ = tx.send(QuestionAnswer::Skipped);
         }
     }
 

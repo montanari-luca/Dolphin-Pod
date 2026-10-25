@@ -29,6 +29,15 @@ pub enum ToastLevel {
     Error,
 }
 
+/// One choice an agent offers when it asks the user a question.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct QuestionOption {
+    pub label: String,
+    pub description: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 #[ts(export)]
@@ -47,6 +56,10 @@ pub enum CoreEvent {
     GrantChanged { grant: PermissionGrant },
     ActionLogged { entry: ActionLogEntry },
     ConfirmRequest { id: String, title: String, body: String },
+    /// An agent paused its run to ask the user a question (the options exclude the UI's own "Other" field).
+    QuestionRequest { id: String, chat_id: String, agent_id: String, question: String, options: Vec<QuestionOption> },
+    /// The question was answered, skipped or cancelled; every client drops its panel.
+    QuestionClosed { id: String },
     UpdateAvailable { version: String, url: String },
     SyncStatusChanged { status: SyncStatus },
     /// Records that other lists need to reload after a sync (providers and automations have no finer events).

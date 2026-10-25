@@ -25,6 +25,7 @@ export type { Platform } from "./generated/Platform";
 export type { ProviderConfig } from "./generated/ProviderConfig";
 export type { ProviderKind } from "./generated/ProviderKind";
 export type { ProviderKindInfo } from "./generated/ProviderKindInfo";
+export type { QuestionOption } from "./generated/QuestionOption";
 export type { RemotePath } from "./generated/RemotePath";
 export type { RemoteReceipt } from "./generated/RemoteReceipt";
 export type { RemoteSettings } from "./generated/RemoteSettings";

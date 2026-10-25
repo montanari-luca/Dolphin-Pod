@@ -534,6 +534,14 @@ impl Core {
         if has_git {
             tool_specs.push(crate::gittool::spec());
         }
+        // The question tool needs someone to answer: not in automations, delegated runs or runs another device asked for.
+        let can_ask = model.tools
+            && task.delegated_by.is_none()
+            && turn.user_msg.meta.get("automation").is_none()
+            && !self.remote.is_active(&turn.chat.id);
+        if can_ask {
+            tool_specs.push(tools::ask_spec());
+        }
         let ctx_cfg = ContextSettings::load(&self.db);
         let mut rc = RunContext::new(context::Budget::new(window::resolve(&model, cfg.kind, ctx_cfg.local_window), ctx_cfg.compact_at), ctx_cfg);
         if ctx_cfg.compress_tools && model.tools {
@@ -548,6 +556,7 @@ impl Core {
             permission: level,
             has_image_tool: is_image_agent,
             has_web: web,
+            has_ask: can_ask,
             delegates: &delegates,
             // Preferences change with every request; they go after the history so the system prompt and
             // the history stay identical between turns and provider prompt caches keep hitting.
@@ -797,6 +806,25 @@ impl Core {
                         }
                         r
                     }
+                } else if call.name == tools::ASK_TOOL {
+                    match tools::parse_question(&call.arguments) {
+                        Ok(_) if !can_ask => Err(CoreError::invalid("unknown tool 'ask_user'")),
+                        Ok((question, options)) => {
+                            self.activity(&turn.chat.id, &agent.id, AgentActivity::UsingTool, Some("Waiting for your answer".into()));
+                            // A paused agent holds no provider slot.
+                            _permit = None;
+                            let r = self.ask(&turn.chat.id, &agent.id, &question, options, &turn.token).await;
+                            _permit = Some(tokio::select! {
+                                p = self.providers.semaphore(&cfg).acquire_owned() => p.map_err(|_| CoreError::Cancelled)?,
+                                _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
+                            });
+                            match r {
+                                Err(CoreError::Cancelled) => return Err(CoreError::Cancelled),
+                                r => r.map(|a| a.for_agent()),
+                            }
+                        }
+                        Err(e) => Err(e),
+                    }
                 } else if call.name == "git" {
                     match (&workspace, has_git) {
                         (Some(ws), true) => {
@@ -842,7 +870,8 @@ impl Core {
                     Err(e) => (false, format!("Error: {e}")),
                 };
                 if let Some(list) = msg.meta["tools"].as_array_mut() {
-                    list.push(json!({ "name": call.name, "summary": summary, "ok": ok, "allowed": allowed, "error": (!ok).then(|| truncate(&output, 300)) }));
+                    let answer = (ok && call.name == tools::ASK_TOOL).then(|| output.clone());
+                    list.push(json!({ "name": call.name, "summary": summary, "ok": ok, "allowed": allowed, "error": (!ok).then(|| truncate(&output, 300)), "answer": answer }));
                 }
                 self.save_message(msg)?;
                 let output = if ok { rc.shrink_tool_output(&call.name, output) } else { output };

@@ -249,6 +249,14 @@ impl DolphinCore {
         self.core.resolve_confirmation(&id, accepted);
     }
 
+    pub fn answer_question(&self, id: String, answer: String, custom: bool) {
+        self.core.answer_question(&id, &answer, custom);
+    }
+
+    pub fn skip_question(&self, id: String) {
+        self.core.skip_question(&id);
+    }
+
     // ------------------------------------------------------------------ agents, roles, providers, settings
 
     pub fn update_agent(&self, agent_json: String) -> R<String> {
