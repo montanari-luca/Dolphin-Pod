@@ -63,6 +63,10 @@ struct AgentCardView: View {
         case "docs": return "Documentation"
         case "image": return "Images"
         case "teacher": return "Teaching"
+        case "fun_facts": return "Fun facts"
+        case "verifier": return "Verification"
+        case "researcher": return "Research"
+        case "git": return "Git"
         default: return agent.specialty.capitalized
         }
     }

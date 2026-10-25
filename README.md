@@ -7,7 +7,7 @@
 
 Dolphin Pod is a modern, light & fast group chat-like app where the members are AI agents. Roger moderates, Lincoln orchestrates,
 and a team of specialists (coding, long-horizon projects, security, debugging, writing, docs, images and
-teaching) answer in shared chats. Every agent runs on the local or cloud reasoning model you choose.
+teaching, fun facts, verification, web research and git) answer in shared chats. Every agent runs on the local or cloud reasoning model you choose.
 
 ## Highlights
 

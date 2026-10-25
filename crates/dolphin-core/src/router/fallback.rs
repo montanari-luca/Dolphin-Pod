@@ -5,8 +5,11 @@ use crate::model::{Agent, AgentRole, PermissionLevel};
 
 const RULES: &[(&str, &[&str])] = &[
     ("image", &["image", "picture", "draw", "illustration", "logo", "photo", "render", "wallpaper", "icon of"]),
+    ("fun_facts", &["fun fact", "did you know", "trivia", "random fact", "something interesting", "interesting fact"]),
+    ("researcher", &["research", "deep dive", "investigate", "look into", "compare sources", "state of the art", "literature review"]),
     ("security", &["security", "vulnerab", "exploit", "cve", "pentest", "xss", "injection", "auth bypass", "threat model", "harden", "malware", "encryption"]),
     ("debug", &["bug", "error", "stack trace", "traceback", "exception", "crash", "doesn't work", "not working", "fails", "failing", "debug", "segfault", "panic"]),
+    ("git", &["git ", "commit", "rebase", "stash", "branch", "merge conflict", "push to", "push my", "push the", "pull from", "pull the latest", "git history"]),
     ("docs", &["readme", "documentation", "docs", "docstring", "api reference", "changelog", "write up"]),
     ("creative", &["story", "poem", "lyrics", "novel", "screenplay", "script for", "slogan", "tagline", "creative", "character", "haiku"]),
     ("long_horizon", &["project", "roadmap", "milestone", "multi-step", "end to end", "architecture", "migrate"]),
@@ -19,9 +22,24 @@ const INTERNAL: &[&str] = &[
     "clear the chat", "cleanup", "clean up", "turn off", "turn on", "dark mode", "light mode", "theme", "timer", "add an automation",
 ];
 
+/// Specialties whose keywords beat "the user wants to learn", so "how did X start, any fun facts?" still reaches Ruby.
+const PRIORITY: &[&str] = &["fun_facts", "researcher", "git"];
+
+/// Phrases that explicitly ask for the work to be checked. Amelia only ever runs on these (or an @mention).
+const VERIFY: &[&str] = &[
+    "double-check", "double check", "doublecheck", "fact-check", "fact check", "check your work", "check the work", "check my work",
+    "verify your", "verify the work", "verify the result", "verify this", "verify it", "verify everything", "and verify", "then verify",
+    "make sure it's correct", "make sure it is correct",
+];
+
 const QUICK: &[&str] = &["quick", "quickly", "just give me", "just write", "no explanation", "tl;dr", "asap", "short answer"];
 const PLAN: &[&str] = &["plan ", "plan:", "plan,", "plan.", "plan?", "a plan", "roadmap", "design doc", "proposal", "strategy", "outline the steps"];
 const LEARN: &[&str] = &["how do i", "how to", "how can i", "explain", "teach me", "help me understand", "what is", "why"];
+
+/// Whether the user explicitly asked for a verification pass.
+pub fn wants_verification(text: &str) -> bool {
+    has(&text.to_lowercase(), VERIFY)
+}
 
 fn has(text: &str, words: &[&str]) -> bool {
     words.iter().any(|w| text.contains(w))
@@ -44,11 +62,12 @@ pub fn route(text: &str, chat_agents: &[Agent], prefers_quick: bool) -> Decision
         Mode::Implement
     };
     let pick = |spec: &str| specialists.iter().find(|a| a.specialty == spec).map(|a| a.id.clone());
+    let priority = RULES.iter().any(|(spec, words)| PRIORITY.contains(spec) && has(&t, words) && pick(spec).is_some());
     let mut target = None;
     if mode == Mode::Plan {
         target = pick("long_horizon");
     }
-    if target.is_none() && mode == Mode::Learn && !has(&t, &["image", "picture", "draw"]) {
+    if target.is_none() && mode == Mode::Learn && !priority && !has(&t, &["image", "picture", "draw"]) {
         target = pick("teacher");
     }
     if target.is_none() {
@@ -61,11 +80,20 @@ pub fn route(text: &str, chat_agents: &[Agent], prefers_quick: bool) -> Decision
             }
         }
     }
-    match target {
-        Some(id) => Decision {
+    // "Do X, then double-check it": the worker first, then Amelia, who sees the worker's answer.
+    let mut targets: Vec<String> = target.into_iter().collect();
+    if let Some(v) = pick("verifier")
+        && mode != Mode::Plan
+        && wants_verification(text)
+        && !targets.contains(&v)
+    {
+        targets.push(v);
+    }
+    match targets.first() {
+        Some(_) => Decision {
             mode,
             intent: "keyword routing".into(),
-            targets: vec![id],
+            targets,
             rewrite: if mode == Mode::Plan { Rewrite::None } else { Rewrite::Light },
             permission: if mode == Mode::Plan { PermissionLevel::ReadOnly } else { PermissionLevel::Full },
             ..Decision::default()

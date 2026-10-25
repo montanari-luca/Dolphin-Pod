@@ -21,6 +21,11 @@ describe("mentions", () => {
     expect(filterAgents(agents, "r").map((a) => a.name)).toEqual(["Roger", "Rick"]);
   });
 
+  it("lists every member of a big chat", () => {
+    const many = Array.from({ length: 14 }, (_, i) => agent(`a${i}`, `Agent${i}`));
+    expect(filterAgents(many, "")).toHaveLength(14);
+  });
+
   it("inserts a mention and moves the caret after it", () => {
     expect(insertMention("ask @pr now", 4, 7, "Prof")).toEqual({ text: "ask @Prof  now", caret: 10 });
   });

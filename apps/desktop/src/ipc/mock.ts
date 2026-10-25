@@ -42,6 +42,10 @@ const SEED: [string, string, Agent["role"], string, string, AgentColor][] = [
   ["ducky", "Ducky", "specialist", "docs", "Docs specialist. Writes READMEs, API references, guides and clear explanations of code.", g("#eab308", "#fde047")],
   ["sarah", "Sarah", "specialist", "image", "Image specialist. Turns your ideas into detailed image prompts and generates the images.", g("#f7826f", "#fbb36a")],
   ["prof", "Prof", "specialist", "teacher", "Professor. Helps you learn anything step by step, with examples and checks for understanding.", g("#10b981", "#14b8a6")],
+  ["ruby", "Ruby", "specialist", "fun_facts", "Fun facts agent. Tells you surprising, true fun facts whenever you ask for one.", g("#e11d48", "#fb7185")],
+  ["amelia", "Amelia", "specialist", "verifier", "Verification agent, called only when you explicitly ask her to double-check work, with evidence for every verdict.", g("#0d9488", "#2dd4bf")],
+  ["luna", "Luna", "specialist", "researcher", "Research agent. Runs many web searches in parallel, validates and cross-checks the sources, checks dates and reports the final findings with citations.", g("#4338ca", "#818cf8")],
+  ["robert", "Robert", "specialist", "git", "Git manager. Tracks history and handles status, commit, push, pull and fetch, usually on behalf of the coding agents.", g("#ea580c", "#f59e0b")],
 ];
 
 const KINDS: ProviderKindInfo[] = (
@@ -100,11 +104,11 @@ export function mockBackend(): Backend {
   }));
   const id = (slug: string) => `a-${slug}`;
   const chats: Chat[] = [
-    ["Coding", "code", ["rick", "jordan", "ducky", "viktor", "prof"]],
-    ["General", "message-circle", ["rick", "micheal", "viktor", "jordan", "emma", "ducky", "sarah", "prof"]],
-    ["Long Horizon Agentic", "rocket", ["micheal", "rick", "jordan"]],
-    ["Learning", "graduation-cap", ["prof", "ducky"]],
-    ["Creative", "palette", ["emma", "sarah"]],
+    ["Coding", "code", ["rick", "jordan", "ducky", "viktor", "prof", "robert", "amelia"]],
+    ["General", "message-circle", ["rick", "micheal", "viktor", "jordan", "emma", "ducky", "sarah", "prof", "ruby", "amelia", "luna", "robert"]],
+    ["Long Horizon Agentic", "rocket", ["micheal", "rick", "jordan", "robert", "amelia", "luna"]],
+    ["Learning", "graduation-cap", ["prof", "ducky", "ruby", "luna"]],
+    ["Creative", "palette", ["emma", "sarah", "ruby"]],
   ].map(([name, icon, slugs], i) => ({
     id: `c-${i}`, name: name as string, icon: icon as string, sort: i,
     agentIds: ["roger", "lincoln", ...(slugs as string[])].map(id),

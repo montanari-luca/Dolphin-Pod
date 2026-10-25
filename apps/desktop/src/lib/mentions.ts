@@ -13,7 +13,7 @@ export function filterAgents(agents: Agent[], query: string): Agent[] {
   return agents
     .filter((a) => a.role !== "orchestrator")
     .filter((a) => !q || a.name.toLowerCase().startsWith(q) || a.slug.startsWith(q) || a.specialty.startsWith(q))
-    .slice(0, 8);
+    .slice(0, 20);
 }
 
 export function insertMention(text: string, start: number, caret: number, name: string): { text: string; caret: number } {

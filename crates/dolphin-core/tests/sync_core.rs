@@ -203,5 +203,5 @@ async fn a_device_keeps_its_own_edits_made_during_its_first_sync() {
     until("A idle", || a.sync_status().pending == 0 && a.sync_status().state == SyncState::Idle).await;
     tokio::time::sleep(Duration::from_secs(1)).await;
     let with = a.list_agents().unwrap().iter().filter(|x| x.model.is_some()).count();
-    assert_eq!(with, 10, "only {with} of 10 agents kept their model");
+    assert_eq!(with, 14, "only {with} of 14 agents kept their model");
 }

@@ -51,6 +51,10 @@ export const AGENTS: Agent[] = [
   { name: "Ducky", role: "Docs", job: "READMEs, API references, guides and clear explanations of code.", from: "#eab308", to: "#fde047" },
   { name: "Sarah", role: "Images", job: "A reasoning model writes the prompt, an image model renders it.", from: "#f7826f", to: "#fbb36a" },
   { name: "Prof", role: "Teaching", job: "Teaches step by step, with examples and checks for understanding.", from: "#10b981", to: "#14b8a6" },
+  { name: "Ruby", role: "Fun facts", job: "Tells surprising, true fun facts whenever you ask.", from: "#e11d48", to: "#fb7185" },
+  { name: "Amelia", role: "Verification", job: "Double-checks other agents' work with evidence, only when you ask.", from: "#0d9488", to: "#2dd4bf" },
+  { name: "Luna", role: "Research", job: "Parallel web searches, source and date checks, then a cited report.", from: "#4338ca", to: "#818cf8" },
+  { name: "Robert", role: "Git", job: "Tracks history and manages commits, push, pull and fetch, usually for the coding agents.", from: "#ea580c", to: "#f59e0b" },
 ];
 
 export const PROVIDERS = {

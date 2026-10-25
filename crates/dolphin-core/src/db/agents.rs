@@ -46,6 +46,12 @@ impl Db {
             .ok_or_else(|| CoreError::NotFound(format!("agent {slug}")))
     }
 
+    /// Whether a row with this id or slug exists at all, deleted or not (slugs stay unique across tombstones).
+    pub fn agent_row_exists(&self, id: &str, slug: &str) -> Result<bool> {
+        let n: i64 = self.conn().query_row("SELECT COUNT(*) FROM agents WHERE id = ?1 OR slug = ?2", params![id, slug], |r| r.get(0))?;
+        Ok(n > 0)
+    }
+
     pub fn upsert_agent(&self, a: &Agent) -> Result<Agent> {
         let mut a = a.clone();
         a.updated_at = now_ms();

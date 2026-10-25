@@ -1,6 +1,6 @@
 import * as HoverCard from "@radix-ui/react-hover-card";
 import { motion } from "motion/react";
-import { BookOpen, Bug, Code2, Feather, GraduationCap, Image as ImageIcon, MessagesSquare, Network, Rocket, Settings2, ShieldCheck, Sparkles, type LucideIcon } from "lucide-react";
+import { BadgeCheck, BookOpen, Bug, Code2, Feather, GitBranch, GraduationCap, Image as ImageIcon, Lightbulb, MessagesSquare, Network, Rocket, Settings2, ShieldCheck, Sparkles, Telescope, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { Agent } from "@dolphin/shared";
 import { cn } from "@/lib/cn";
@@ -20,6 +20,10 @@ export const SPECIALTY_ICON: Record<string, LucideIcon> = {
   docs: BookOpen,
   image: ImageIcon,
   teacher: GraduationCap,
+  fun_facts: Lightbulb,
+  verifier: BadgeCheck,
+  researcher: Telescope,
+  git: GitBranch,
 };
 
 export const SPECIALTY_LABEL: Record<string, string> = {
@@ -33,6 +37,10 @@ export const SPECIALTY_LABEL: Record<string, string> = {
   docs: "Documentation",
   image: "Images",
   teacher: "Teaching",
+  fun_facts: "Fun facts",
+  verifier: "Verification",
+  researcher: "Research",
+  git: "Git",
 };
 
 export function AgentAvatar({ agent, size = 32, busy, className }: { agent: Agent; size?: number; busy?: boolean; className?: string }) {

@@ -61,6 +61,12 @@ Modes:
 - plan: they ask for a plan, roadmap or design (not the implementation). Route to the long-horizon agent; rewrite "none" or "light"; permission "read_only".
 - implement: they want something built, written, fixed or changed.
 
+Special agents:
+- A fun-facts agent (specialty fun_facts) tells fun facts when asked; route "fun fact", trivia and "did you know" requests to it.
+- A verification agent (specialty verifier) is used ONLY when the user explicitly asks to double-check, verify or fact-check work. Never add it on your own. When they ask to do something and then check it, targets = [the worker, the verifier], verifier LAST.
+- A research agent (specialty researcher) handles requests to research, investigate or compare sources on the web, with many searches and fact-checking. Use it instead of answering yourself when the user wants researched, cited findings.
+- A git agent (specialty git) handles git work: status, history, commits, branches, push and pull. Coding agents call it themselves, so route to it when the user's request is about git.
+
 Rules: targets must come from the specialist list above (use their names). Pick the single best fit; use 2-3 only when the task clearly needs several skills. rewrite: "none" if the request is already precise, "light" to tidy it, "full" if it needs structure. approves_plan is true only when the user is approving the pending plan. Set lean_prompt_note to a short tip when the request is actionable but missing details that would help."#,
         chat = i.chat_name,
         roster = if roster.is_empty() { "- (no specialists)".into() } else { roster.join("\n") },
@@ -123,7 +129,16 @@ pub fn parse_decision(reply: &str, members: &[Agent], user_text: &str, preferenc
             targets.push(a.id.clone());
         }
     }
-    targets.truncate(3);
+    // Amelia only runs when the user explicitly asks for a check, and then she goes last so she sees the work.
+    let verifier = specialists.iter().find(|a| a.specialty == "verifier").map(|a| a.id.clone());
+    let verify = fallback::wants_verification(user_text);
+    if let Some(v) = &verifier {
+        targets.retain(|t| t != v);
+    }
+    targets.truncate(if verify { 2 } else { 3 });
+    if verify && let Some(v) = verifier {
+        targets.push(v);
+    }
 
     let mut d = Decision {
         intent: raw.intent.unwrap_or_default(),
@@ -273,5 +288,36 @@ mod tests {
         assert_eq!(fallback::route("hi roger, how are you?", &m, false).mode, Mode::Answer);
         let d = fallback::route("draw a picture of a dolphin", &m, false);
         assert_eq!(name_of(&m, &d.targets[0]), "Sarah");
+    }
+
+    #[test]
+    fn verifier_is_explicit_only_and_goes_last() {
+        let m = members("General");
+        let reply = r#"{"intent":"fix bug","mode":"implement","targets":["Amelia","Jordan"]}"#;
+        let d = parse_decision(reply, &m, "this crashes on startup, fix it", &[]).unwrap();
+        assert_eq!(d.targets.iter().map(|id| name_of(&m, id)).collect::<Vec<_>>(), ["Jordan"], "no check was asked for");
+
+        let reply = r#"{"intent":"fix bug","mode":"implement","targets":["Amelia","Jordan","Rick"]}"#;
+        let d = parse_decision(reply, &m, "fix this bug, then double-check your work", &[]).unwrap();
+        assert_eq!(d.targets.iter().map(|id| name_of(&m, id)).collect::<Vec<_>>(), ["Jordan", "Rick", "Amelia"]);
+
+        let fb = fallback::route("fix this bug, then double-check your work", &m, false);
+        assert_eq!(fb.targets.iter().map(|id| name_of(&m, id)).collect::<Vec<_>>(), ["Jordan", "Amelia"]);
+        let fb = fallback::route("please double check that", &m, false);
+        assert_eq!(fb.targets.iter().map(|id| name_of(&m, id)).collect::<Vec<_>>(), ["Amelia"]);
+    }
+
+    #[test]
+    fn fallback_routes_the_new_specialists() {
+        let m = members("General");
+        let first = |text: &str| name_of(&m, &fallback::route(text, &m, false).targets[0]);
+        assert_eq!(first("tell me a fun fact about octopuses"), "Ruby");
+        assert_eq!(first("why do cats purr? any fun facts"), "Ruby", "beats the learn flow");
+        assert_eq!(first("research the history of the printing press"), "Luna");
+        assert_eq!(first("commit my changes with a good message"), "Robert");
+        assert_eq!(first("git status please"), "Robert");
+        // Not in the chat: Creative has only Emma, Sarah and Ruby.
+        let c = members("Creative");
+        assert!(fallback::route("commit my changes", &c, false).targets.iter().all(|id| name_of(&c, id) != "Robert"));
     }
 }

@@ -9,7 +9,7 @@ export type Agent = { id: string,
  */
 slug: string, name: string, role: AgentRole, 
 /**
- * Specialty key: moderator, orchestrator, coder, long_horizon, security, debug, creative, docs, image, teacher.
+ * Specialty key: moderator, orchestrator, coder, long_horizon, security, debug, creative, docs, image, teacher, fun_facts, verifier, researcher, git.
  */
 specialty: string, job: string, color: AgentColor, model: ModelRef | null, 
 /**

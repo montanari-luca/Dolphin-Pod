@@ -11,9 +11,9 @@ import { MessageItem } from "./MessageItem";
 const EMPTY: Message[] = [];
 
 const SUGGESTIONS: Record<string, string[]> = {
-  Coding: ["How do I implement a function in Java?", "Review this function for edge cases", "@Jordan why does my build fail with a linker error?"],
-  General: ["What can this pod do?", "Explain how routing works here", "Give me three ideas for a weekend project"],
-  "Long Horizon Agentic": ["Make a plan to add user accounts to my app", "Plan a migration from REST to GraphQL"],
+  Coding: ["How do I implement a function in Java?", "Review this function for edge cases", "@Jordan why does my build fail with a linker error?", "@Robert what changed in the last five commits?"],
+  General: ["What can this pod do?", "Explain how routing works here", "Give me three ideas for a weekend project", "@Ruby tell me a fun fact"],
+  "Long Horizon Agentic": ["Make a plan to add user accounts to my app", "Plan a migration from REST to GraphQL", "@Luna research the best approaches to offline-first sync"],
   Learning: ["Teach me how recursion works", "Help me understand Big-O notation"],
   Creative: ["Write a short poem about the sea", "@Sarah draw a dolphin made of glass"],
 };

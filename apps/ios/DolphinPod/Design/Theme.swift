@@ -83,6 +83,10 @@ enum Icons {
         case "docs": return "doc.text.fill"
         case "image": return "photo.fill"
         case "teacher": return "graduationcap.fill"
+        case "fun_facts": return "lightbulb.fill"
+        case "verifier": return "checkmark.seal.fill"
+        case "researcher": return "binoculars.fill"
+        case "git": return "arrow.triangle.branch"
         default: return "sparkles"
         }
     }

@@ -250,7 +250,7 @@ export const Composer = forwardRef<ComposerHandle, { chat: Chat; busy: boolean; 
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4 }}
             transition={{ duration: 0.14 }}
-            className="glass-float absolute bottom-full left-4 z-30 mb-2 w-80 overflow-hidden rounded-lg p-1"
+            className="glass-float absolute bottom-full left-4 z-30 mb-2 max-h-[50vh] w-80 overflow-y-auto rounded-lg p-1"
             role="listbox"
           >
             <div className="px-2.5 pt-1.5 pb-1 text-[10.5px] font-semibold uppercase tracking-wider text-faint">Mention an agent</div>
@@ -259,6 +259,9 @@ export const Composer = forwardRef<ComposerHandle, { chat: Chat; busy: boolean; 
                 <button
                   role="option"
                   aria-selected={i === menuIndex}
+                  ref={(el) => {
+                    if (i === menuIndex) el?.scrollIntoView({ block: "nearest" });
+                  }}
                   onMouseEnter={() => setMenuIndex(i)}
                   onMouseDown={(e) => {
                     e.preventDefault();

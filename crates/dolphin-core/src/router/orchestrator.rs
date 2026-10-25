@@ -19,6 +19,9 @@ pub fn orders(d: &Decision, agent: &Agent, others: &[&Agent]) -> String {
     if d.mode == Mode::Plan {
         s.push_str(" Plan only: read-only until the user approves.");
     }
+    if agent.specialty == "verifier" {
+        s.push_str(" The user asked you to double-check the work above: verify what the previous agents did and claimed, with evidence; do not redo it.");
+    }
     if !others.is_empty() {
         let names: Vec<&str> = others.iter().map(|a| a.name.as_str()).collect();
         s.push_str(&format!(" {} will also contribute; focus on your part.", names.join(", ")));
