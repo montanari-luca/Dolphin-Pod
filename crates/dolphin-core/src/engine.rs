@@ -699,7 +699,20 @@ impl Core {
             // Tool turn: replay the native assistant turn, then the results.
             self.activity(&turn.chat.id, &agent.id, AgentActivity::UsingTool, Some(tools::summarize(&calls[0].name, &calls[0].arguments)));
             req.messages.push(ChatMessage { role: Role::Assistant, parts: vec![Part::Text(step_text.clone())], tool_calls: calls.clone(), tool_call_id: None, tool_name: None, raw });
-            for call in &calls {
+            // Web lookups in one step are independent and read-only: run them at once (the results are still
+            // logged and handed back in call order below).
+            let web_idx: Vec<usize> = (0..calls.len()).filter(|i| tools::is_web_tool(&calls[*i].name)).collect();
+            let mut web_results: std::collections::HashMap<usize, Result<String>> = std::collections::HashMap::new();
+            if web_idx.len() > 1 {
+                self.activity(&turn.chat.id, &agent.id, AgentActivity::UsingTool, Some(format!("Running {} web lookups at once", web_idx.len())));
+                let batch: Vec<(&str, &Value)> = web_idx.iter().map(|i| (calls[*i].name.as_str(), &calls[*i].arguments)).collect();
+                let results = tokio::select! {
+                    r = tools::execute_web_all(&batch) => r,
+                    _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
+                };
+                web_results.extend(web_idx.iter().copied().zip(results));
+            }
+            for (call_idx, call) in calls.iter().enumerate() {
                 let sig = format!("{}:{}", call.name, call.arguments);
                 let repeats = match &last_sig { Some((s, n)) if *s == sig => n + 1, _ => 1 };
                 last_sig = Some((sig, repeats));
@@ -723,6 +736,8 @@ impl Core {
                         r = self.generate_image(agent, msg, call.arguments["prompt"].as_str().unwrap_or_default()) => r,
                         _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
                     }
+                } else if let Some(done) = web_results.remove(&call_idx) {
+                    done
                 } else if tools::is_web_tool(&call.name) {
                     tokio::select! {
                         r = tools::execute_web(&call.name, &call.arguments) => r,

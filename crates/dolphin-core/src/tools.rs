@@ -14,6 +14,11 @@ use crate::websearch;
 
 const MAX_OUTPUT: usize = 24_000;
 
+/// A burst of parallel lookups is queued, not fired all at once: the search engines are scraped and answer
+/// a flood with bot challenges.
+static SEARCH_SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
+static FETCH_SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(6);
+
 fn spec(name: &str, description: &str, parameters: Value) -> ToolSpec {
     ToolSpec { name: name.into(), description: description.into(), parameters }
 }
@@ -64,17 +69,24 @@ pub async fn execute_web(name: &str, args: &Value) -> Result<String> {
     }
     match name {
         "web_search" => {
+            let _slot = SEARCH_SLOTS.acquire().await.map_err(|_| CoreError::Cancelled)?;
             let q = s(args, "query")?;
             let max = args["max_results"].as_u64().unwrap_or(6).clamp(1, 10) as usize;
             let hits = websearch::search(q, max).await?;
             Ok(truncate(&websearch::format_hits(q, &hits), MAX_OUTPUT))
         }
         "fetch_page" => {
+            let _slot = FETCH_SLOTS.acquire().await.map_err(|_| CoreError::Cancelled)?;
             let max = args["max_chars"].as_u64().unwrap_or(websearch::MAX_PAGE_CHARS as u64).clamp(1000, 30_000) as usize;
             websearch::fetch_page(s(args, "url")?, max).await
         }
         other => Err(CoreError::invalid(format!("unknown tool '{other}'"))),
     }
+}
+
+/// Run several web calls at once; results come back in call order.
+pub async fn execute_web_all(calls: &[(&str, &Value)]) -> Vec<Result<String>> {
+    futures::future::join_all(calls.iter().map(|(name, args)| execute_web(name, args))).await
 }
 
 /// Tools offered to an agent. Write tools are only offered with full permissions (and are also
@@ -299,6 +311,19 @@ mod tests {
         assert_eq!(native, ["fetch_page"]);
         assert!(is_web_tool("web_search") && !is_web_tool("read_file"));
         assert!(check(PermissionLevel::ReadOnly, "web_search").is_ok());
+    }
+
+    #[tokio::test]
+    async fn parallel_web_calls_keep_call_order() {
+        // Local addresses fail fast without touching the network, and each error names its own URL.
+        let a = json!({ "url": "http://127.0.0.1/a" });
+        let b = json!({ "url": "http://localhost/b" });
+        let c = json!({ "url": "not a url" });
+        let out = execute_web_all(&[("fetch_page", &a), ("fetch_page", &b), ("fetch_page", &c), ("nope", &a)]).await;
+        let errs: Vec<String> = out.into_iter().map(|r| r.unwrap_err().to_string()).collect();
+        assert!(errs[0].contains("local network") && errs[1].contains("local network"));
+        assert!(errs[2].contains("not a valid URL"));
+        assert!(errs[3].contains("unknown tool"));
     }
 
     #[test]
