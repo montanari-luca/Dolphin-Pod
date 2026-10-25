@@ -23,6 +23,24 @@ fn spec(name: &str, description: &str, parameters: Value) -> ToolSpec {
     ToolSpec { name: name.into(), description: description.into(), parameters }
 }
 
+pub const DELEGATE_TOOL: &str = "delegate_to_agent";
+
+/// The delegation tool, listing who can be asked (the chat's members that qualify).
+pub fn delegate_spec(delegates: &[crate::model::Agent]) -> ToolSpec {
+    let list: Vec<String> = delegates.iter().map(|a| format!("{} ({})", a.name, crate::router::prompts::first_sentence(&a.job))).collect();
+    spec(
+        DELEGATE_TOOL,
+        &format!(
+            "Hand a task to a colleague in this chat and get their answer back. Available: {}. Describe the task completely: they only see the chat history and your task text.",
+            list.join("; ")
+        ),
+        json!({ "type": "object", "properties": {
+            "agent": { "type": "string", "description": "The colleague's name." },
+            "task": { "type": "string", "description": "What they should do, with every detail they need (paths, commit scope, what to verify, the question to research)." }
+        }, "required": ["agent", "task"] }),
+    )
+}
+
 pub fn image_tool() -> ToolSpec {
     spec(
         "generate_image",
@@ -144,6 +162,7 @@ pub fn summarize(name: &str, args: &Value) -> String {
         "run_command" => format!("Ran `{}`", truncate(&a("command"), 80)),
         "web_search" => format!("Searched the web for \"{}\"", truncate(&a("query"), 60)),
         "fetch_page" => format!("Opened {}", truncate(&a("url"), 80)),
+        DELEGATE_TOOL => format!("Asked {}: {}", a("agent"), truncate(&a("task"), 70)),
         "git" => format!("Ran `git {}`", truncate(&crate::gittool::parse_args(args).map(|a| crate::gittool::normalize(&a)).unwrap_or_default(), 80)),
         "generate_image" => "Generated an image".into(),
         "context_retrieve" => "Re-read a compressed result".into(),

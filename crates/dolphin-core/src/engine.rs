@@ -22,6 +22,7 @@ use crate::tools;
 use crate::util::{now_ms, truncate};
 
 mod ctx;
+mod delegate;
 mod git;
 
 const MAX_TOOL_STEPS: usize = 40;
@@ -45,7 +46,22 @@ struct AgentTask {
     brief: Option<String>,
     plan: bool,
     routing: Value,
+    /// Set for a nested run: the permission level of the agent that delegated (the delegate never exceeds it).
+    level_override: Option<PermissionLevel>,
+    /// Set for a nested run: the name of the delegating agent. Delegates cannot delegate further.
+    delegated_by: Option<String>,
 }
+
+impl AgentTask {
+    fn new(mode: Mode, brief: Option<String>, plan: bool, routing: Value) -> Self {
+        Self { mode, brief, plan, routing, level_override: None, delegated_by: None }
+    }
+}
+
+/// Specialties that may hand work to a colleague, and the specialties they may hand it to.
+const DELEGATORS: &[&str] = &["coder", "long_horizon", "debug", "security", "docs"];
+const DELEGATES: &[&str] = &["git", "verifier", "researcher"];
+const MAX_DELEGATIONS: usize = 3;
 
 type ModelHandle = (Arc<dyn Provider>, ChatRequest);
 
@@ -206,7 +222,7 @@ impl Core {
                     continue;
                 }
                 let mode = if agent.id == roger.id { Mode::Answer } else { Mode::Implement };
-                let task = AgentTask { mode, brief: None, plan: false, routing: json!({ "via": "mention" }) };
+                let task = AgentTask::new(mode, None, false, json!({ "via": "mention" }));
                 self.run_agent(&turn, &agent, task).await?;
             }
             return Ok(());
@@ -284,7 +300,7 @@ impl Core {
                 }
             }
             Mode::Answer => {
-                let task = AgentTask { mode: Mode::Answer, brief: None, plan: false, routing: json!({ "via": "moderator", "mode": "answer" }) };
+                let task = AgentTask::new(Mode::Answer, None, false, json!({ "via": "moderator", "mode": "answer" }));
                 self.run_agent(&turn, &roger, task).await?;
             }
             mode => self.dispatch(&turn, &decision, mode, &lincoln, &roger).await?,
@@ -316,12 +332,12 @@ impl Core {
             }
             let others: Vec<&Agent> = targets.iter().filter(|a| a.id != agent.id).collect();
             let orders = orchestrator::orders(d, agent, &others);
-            let task = AgentTask {
+            let task = AgentTask::new(
                 mode,
-                brief: Some(format!("{orders}\n\nBrief:\n{brief_text}")),
-                plan: mode == Mode::Plan,
-                routing: json!({ "via": "lincoln", "mode": mode.as_str(), "rewrite": d.rewrite, "brief": brief_text }),
-            };
+                Some(format!("{orders}\n\nBrief:\n{brief_text}")),
+                mode == Mode::Plan,
+                json!({ "via": "lincoln", "mode": mode.as_str(), "rewrite": d.rewrite, "brief": brief_text }),
+            );
             self.run_agent(turn, agent, task).await?;
         }
         Ok(())
@@ -347,7 +363,7 @@ impl Core {
             "Lincoln (orchestrator) → {}: the user approved your plan above. You now have full agentic permissions in this chat. Implement the plan step by step, verify your work, then summarize what you changed.",
             agent.name
         );
-        let task = AgentTask { mode: Mode::Implement, brief: Some(brief), plan: false, routing: json!({ "via": "lincoln", "mode": "implement", "planApproved": plan.id }) };
+        let task = AgentTask::new(Mode::Implement, Some(brief), false, json!({ "via": "lincoln", "mode": "implement", "planApproved": plan.id }));
         self.run_agent(&turn, &agent, task).await.map(|_| ())
     }
 
@@ -487,7 +503,10 @@ impl Core {
         let model = self.model_for(agent).ok_or_else(|| CoreError::invalid(self.no_model_reason(agent)))?;
         let (cfg, provider) = self.provider(&model.provider_id)?;
         let workspace = turn.chat.workspace_path.clone().filter(|p| std::path::Path::new(p).is_dir());
-        let level = self.db.grant(&turn.chat.id, &agent.id)?.level;
+        let level = match task.level_override {
+            Some(l) => l,
+            None => self.db.grant(&turn.chat.id, &agent.id)?.level,
+        };
         let is_image_agent = agent.specialty == "image" && agent.image_model.is_some();
 
         let mut tool_specs = if model.tools { tools::specs(workspace.is_some(), level) } else { vec![] };
@@ -500,6 +519,15 @@ impl Core {
         }
         if is_image_agent && model.tools {
             tool_specs.push(tools::image_tool());
+        }
+        // Coding and agentic agents can hand work to Robert, Amelia and Luna (one level deep).
+        let delegates: Vec<Agent> = if model.tools && task.delegated_by.is_none() && DELEGATORS.contains(&agent.specialty.as_str()) {
+            turn.members.iter().filter(|m| DELEGATES.contains(&m.specialty.as_str()) && m.id != agent.id).cloned().collect()
+        } else {
+            vec![]
+        };
+        if !delegates.is_empty() {
+            tool_specs.push(tools::delegate_spec(&delegates));
         }
         // Robert's git tool: needs a repository folder to work in.
         let has_git = agent.specialty == "git" && workspace.is_some() && model.tools;
@@ -520,6 +548,7 @@ impl Core {
             permission: level,
             has_image_tool: is_image_agent,
             has_web: web,
+            delegates: &delegates,
             // Preferences change with every request; they go after the history so the system prompt and
             // the history stay identical between turns and provider prompt caches keep hitting.
             preferences: &[],
@@ -555,10 +584,11 @@ impl Core {
         };
         stats.input_chars = req.system.len() + req.messages.iter().map(|m| m.text_content().len()).sum::<usize>();
 
-        let _permit = tokio::select! {
+        let mut _permit = Some(tokio::select! {
             p = self.providers.semaphore(&cfg).acquire_owned() => p.map_err(|_| CoreError::Cancelled)?,
             _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
-        };
+        });
+        let mut delegations = 0usize;
         let stall = Duration::from_secs(settings::get_int(&self.db, keys::STALL_SECONDS).max(15) as u64);
         let roger = self.agent_by_slug("roger")?;
         let mut stalled_once = false;
@@ -734,13 +764,38 @@ impl Core {
                     req.messages.push(ChatMessage::tool_result(call, rc.store.retrieve(&call.arguments)));
                     continue;
                 }
-                let level = self.db.grant(&turn.chat.id, &agent.id)?.level;
+                let level = match task.level_override {
+                    Some(l) => l,
+                    None => self.db.grant(&turn.chat.id, &agent.id)?.level,
+                };
                 let summary = tools::summarize(&call.name, &call.arguments);
                 let result = if call.name == "generate_image" {
                     generated_image = true;
                     tokio::select! {
                         r = self.generate_image(agent, msg, call.arguments["prompt"].as_str().unwrap_or_default()) => r,
                         _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
+                    }
+                } else if call.name == tools::DELEGATE_TOOL {
+                    delegations += 1;
+                    if delegates.is_empty() {
+                        Err(CoreError::invalid("unknown tool 'delegate_to_agent'"))
+                    } else if delegations > MAX_DELEGATIONS {
+                        Err(CoreError::invalid(format!("you already delegated {MAX_DELEGATIONS} times in this run; finish the work yourself")))
+                    } else {
+                        // The delegate needs a provider slot of its own; hold none while waiting for it.
+                        _permit = None;
+                        let r = tokio::select! {
+                            r = self.delegate(turn, agent, level, &delegates, &call.arguments) => r,
+                            _ = turn.token.cancelled() => Err(CoreError::Cancelled),
+                        };
+                        _permit = Some(tokio::select! {
+                            p = self.providers.semaphore(&cfg).acquire_owned() => p.map_err(|_| CoreError::Cancelled)?,
+                            _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
+                        });
+                        if matches!(r, Err(CoreError::Cancelled)) {
+                            return Err(CoreError::Cancelled);
+                        }
+                        r
                     }
                 } else if call.name == "git" {
                     match (&workspace, has_git) {

@@ -215,3 +215,119 @@ async fn only_robert_gets_the_git_tool() {
         assert_eq!(has, who(r) == "Robert", "{}", who(r));
     }
 }
+
+fn msgs_of(core: &CoreRef, chat_id: &str, slug: &str) -> Vec<Message> {
+    let id = agent(core, slug).id;
+    core.list_messages(chat_id, 100).unwrap().into_iter().filter(|m| m.agent_id.as_deref() == Some(&id)).collect()
+}
+
+fn delegate_call(id: &str, agent: &str, task: &str) -> ProviderEvent {
+    call(id, "delegate_to_agent", json!({ "agent": agent, "task": task }))
+}
+
+#[tokio::test]
+async fn rick_hands_a_task_to_robert_and_gets_the_answer_back() {
+    let p = pod(&["rick", "robert"], |req| match who(req).as_str() {
+        "Rick" if !has_tool_results(req) => vec![delegate_call("d1", "Robert", "Commit the staged changes with a clear message")],
+        "Rick" => vec![text(&format!("Robert did it: {}", tool_results(req).join("|")))],
+        "Robert" => vec![text("Committed abc123.")],
+        _ => vec![text("?")],
+    });
+    let coding = chat(&p.core, "Coding");
+    p.core.send_message(&coding.id, "@Rick commit my work", vec![]).await.unwrap();
+    wait_for(&p.core, &coding.id, done_by(&p.core, "rick")).await;
+
+    let robert = msgs_of(&p.core, &coding.id, "robert");
+    assert_eq!(robert.len(), 1, "Robert answers in the chat under his own name");
+    assert_eq!(robert[0].content, "Committed abc123.");
+    assert_eq!(robert[0].meta["routing"]["via"], "delegation");
+    assert_eq!(robert[0].meta["routing"]["from"], "Rick");
+    let rick = &msgs_of(&p.core, &coding.id, "rick")[0];
+    assert!(rick.content.contains("Robert replied:\nCommitted abc123."), "{}", rick.content);
+    assert!(rick.meta["tools"][0]["summary"].as_str().unwrap().starts_with("Asked Robert:"));
+    assert!(rick.created_at <= robert[0].created_at);
+
+    let reqs = p.provider.requests.lock().unwrap();
+    for r in reqs.iter() {
+        let can = r.tools.iter().any(|t| t.name == "delegate_to_agent");
+        assert_eq!(can, who(r) == "Rick", "only the caller gets the tool, a delegate cannot delegate ({})", who(r));
+    }
+    let robert_req = reqs.iter().find(|r| who(r) == "Robert").unwrap();
+    assert!(robert_req.messages.last().unwrap().text_content().contains("Rick asked you to handle this"));
+    assert!(!robert_req.messages.iter().any(|m| m.text_content().contains("Robert did it")), "the caller's unfinished message is not in the delegate's history");
+}
+
+#[tokio::test]
+async fn bad_delegations_come_back_as_errors() {
+    // Ruby is not delegable (and Luna is not in Coding); Amelia is refused unless the user asked for a check.
+    let p = pod(&["rick", "robert", "amelia"], |req| match who(req).as_str() {
+        "Rick" => match tool_results(req).len() {
+            0 => vec![delegate_call("d1", "Ruby", "tell a fun fact")],
+            1 => vec![delegate_call("d2", "Amelia", "check my change")],
+            2 => vec![delegate_call("d3", "Robert", "git status")],
+            _ => vec![text("done")],
+        },
+        _ => vec![text("fine")],
+    });
+    let coding = chat(&p.core, "Coding");
+    p.core.send_message(&coding.id, "@Rick please do the thing", vec![]).await.unwrap();
+    wait_for(&p.core, &coding.id, done_by(&p.core, "rick")).await;
+    let reqs = p.provider.requests.lock().unwrap();
+    let last = reqs.iter().rev().find(|r| who(r) == "Rick").unwrap();
+    let results = tool_results(last);
+    assert!(results[0].contains("not available") && results[0].contains("Amelia, Robert"), "{}", results[0]);
+    assert!(results[1].contains("only double-checks work when the user explicitly asks"), "{}", results[1]);
+    assert!(results[2].starts_with("Robert replied"), "{}", results[2]);
+}
+
+#[tokio::test]
+async fn amelia_checks_when_the_user_asked_and_delegations_are_capped() {
+    let p = pod(&["rick", "robert", "amelia"], |req| match who(req).as_str() {
+        "Rick" => match tool_results(req).len() {
+            0 => vec![delegate_call("d1", "Amelia", "verify the change")],
+            n @ 1..=3 => vec![delegate_call(&format!("d{}", n + 1), "Robert", &format!("status number {n}"))],
+            _ => vec![text("done")],
+        },
+        _ => vec![text("checked")],
+    });
+    let coding = chat(&p.core, "Coding");
+    p.core.send_message(&coding.id, "@Rick fix it, then double-check it", vec![]).await.unwrap();
+    wait_for(&p.core, &coding.id, done_by(&p.core, "rick")).await;
+    let reqs = p.provider.requests.lock().unwrap();
+    let results = tool_results(reqs.iter().rev().find(|r| who(r) == "Rick").unwrap());
+    assert!(results[0].starts_with("Amelia replied"), "{}", results[0]);
+    assert!(results[1].starts_with("Robert replied") && results[2].starts_with("Robert replied"), "{results:?}");
+    assert!(results[3].contains("already delegated 3 times"), "{}", results[3]);
+}
+
+#[tokio::test]
+async fn a_delegate_never_has_more_permission_than_the_caller() {
+    if std::process::Command::new("git").arg("--version").output().is_err() {
+        return;
+    }
+    let script = |req: &ChatRequest| -> Vec<ProviderEvent> {
+        match who(req).as_str() {
+            "Rick" if !has_tool_results(req) => vec![delegate_call("d1", "Robert", "stage new.txt")],
+            "Rick" => vec![text("ok")],
+            "Robert" if !has_tool_results(req) => vec![call("g1", "git", json!({ "args": ["add", "new.txt"] }))],
+            "Robert" => vec![text(&format!("git said: {}", tool_results(req).join("|")))],
+            _ => vec![text("?")],
+        }
+    };
+    let (p, ws, coding) = git_pod(script, &["rick", "robert"]);
+    std::fs::write(ws.path().join("new.txt"), "x").unwrap();
+    let status = || String::from_utf8(std::process::Command::new("git").args(["status", "--porcelain"]).current_dir(ws.path()).output().unwrap().stdout).unwrap();
+
+    // Robert holds full permissions in this chat, Rick is read-only: the delegated git add is refused.
+    p.core.send_message(&coding.id, "@Rick stage the new file", vec![]).await.unwrap();
+    wait_for(&p.core, &coding.id, done_by(&p.core, "rick")).await;
+    let robert = &msgs_of(&p.core, &coding.id, "robert")[0];
+    assert!(robert.content.contains("read-only"), "{}", robert.content);
+    assert!(status().contains("?? new.txt"), "{}", status());
+
+    // Give Rick full permissions and the same request works.
+    p.core.grant_permission(&coding.id, &agent(&p.core, "rick").id, PermissionLevel::Full).unwrap();
+    p.core.send_message(&coding.id, "@Rick stage it again", vec![]).await.unwrap();
+    wait_for(&p.core, &coding.id, |m| m.iter().filter(|m| m.agent_id.as_deref() == Some(&agent(&p.core, "robert").id) && m.status == MessageStatus::Done).count() == 2).await;
+    assert!(status().contains("A  new.txt"), "{}", status());
+}

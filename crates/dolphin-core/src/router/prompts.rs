@@ -58,6 +58,8 @@ pub struct AgentPromptInput<'a> {
     pub permission: PermissionLevel,
     pub has_image_tool: bool,
     pub has_web: bool,
+    /// Colleagues this agent may hand work to with the delegate_to_agent tool.
+    pub delegates: &'a [Agent],
     pub preferences: &'a [String],
     /// The user's display name, if they set one other than the default "You".
     pub user_name: Option<&'a str>,
@@ -87,6 +89,19 @@ pub fn agent_system(i: &AgentPromptInput) -> String {
     );
     if i.has_web {
         s.push_str("\n\nYou have live web access. Search the web (and open pages) when the question depends on current or recent information, specific facts you are not sure about, or anything the user asks you to look up; answer directly from your own knowledge when you are confident. When you use web results, cite the sources as Markdown links.");
+    }
+    if !i.delegates.is_empty() {
+        s.push_str("\n\nYou can hand work to a colleague with the delegate_to_agent tool and get their answer back. Do your own work yourself and delegate only what is theirs:");
+        for d in i.delegates {
+            let when = match d.specialty.as_str() {
+                "git" => "all git work (status, history, commits, push, pull); give them the exact scope, e.g. which files and what the commit is for",
+                "verifier" => "double-checking work, ONLY if the user explicitly asked for a check",
+                "researcher" => "research that needs many sources, fact-checking and a cited report",
+                _ => "their specialty",
+            };
+            s.push_str(&format!("\n- {}: {}", d.name, when));
+        }
+        s.push_str("\nPush, pull and destructive git commands always need the user's confirmation; if your colleague reports that, pass the question on to the user.");
     }
     if !i.has_web && i.agent.specialty == "researcher" {
         s.push_str("\n\nWeb access is unavailable (it is turned off, or your model has no tool support), so you cannot search or open pages. Say so, tell the user they can enable \"Web access for agents\" in Settings or pick a model with tools, and offer what you can say from your own knowledge, clearly labelled as unverified.");

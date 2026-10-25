@@ -86,7 +86,7 @@ impl Core {
             .db
             .list_messages(&turn.chat.id, fetch)?
             .into_iter()
-            .filter(|m| m.id != exclude && !matches!(m.kind, MessageKind::Ack | MessageKind::Notice))
+            .filter(|m| m.id != exclude && m.status != MessageStatus::Streaming && !matches!(m.kind, MessageKind::Ack | MessageKind::Notice))
             .filter(|m| !(m.content.trim().is_empty() && m.attachments.is_empty()))
             .filter(|m| boundary.as_ref().is_none_or(|(at, id)| (m.created_at, m.id.as_str()) > (*at, id.as_str())))
             .collect();
