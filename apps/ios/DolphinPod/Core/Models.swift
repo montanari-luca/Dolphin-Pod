@@ -4,6 +4,13 @@ import Foundation
 
 // MARK: - Arbitrary JSON
 
+/// A question an agent asked; the user picks one of its options or writes their own answer.
+struct QuestionOption: Equatable { let label: String; let description: String? }
+struct PendingQuestion: Identifiable, Equatable {
+    let id: String, chatId: String, agentId: String, question: String
+    let options: [QuestionOption]
+}
+
 enum JSON: Codable, Equatable {
     case null
     case bool(Bool)
@@ -356,6 +363,8 @@ enum CoreEvent {
     case settingChanged(key: String, value: JSON)
     case usageUpdated(UsageStats)
     case confirmRequest(id: String, title: String, body: String)
+    case questionRequest(PendingQuestion)
+    case questionClosed(id: String)
     case updateAvailable(version: String, url: String)
     case toast(level: String, text: String)
     case syncStatusChanged(SyncStatus)
@@ -391,6 +400,10 @@ enum CoreEvent {
             if change["type"].string == "global" { return .settingChanged(key: change["key"].string ?? "", value: change["value"]) }
         case "usageUpdated": if let u = sub("usage", as: UsageStats.self) { return .usageUpdated(u) }
         case "confirmRequest": return .confirmRequest(id: raw["id"].string ?? "", title: raw["title"].string ?? "", body: raw["body"].string ?? "")
+        case "questionRequest":
+            let options = (raw["options"].array ?? []).map { QuestionOption(label: $0["label"].string ?? "", description: $0["description"].string) }
+            return .questionRequest(PendingQuestion(id: raw["id"].string ?? "", chatId: raw["chatId"].string ?? "", agentId: raw["agentId"].string ?? "", question: raw["question"].string ?? "", options: options))
+        case "questionClosed": return .questionClosed(id: raw["id"].string ?? "")
         case "updateAvailable": return .updateAvailable(version: raw["version"].string ?? "", url: raw["url"].string ?? "")
         case "toast": return .toast(level: raw["level"].string ?? "info", text: raw["text"].string ?? "")
         case "syncStatusChanged": if let s = sub("status", as: SyncStatus.self) { return .syncStatusChanged(s) }

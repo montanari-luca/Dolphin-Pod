@@ -56,6 +56,8 @@ final class CoreClient: @unchecked Sendable {
         try decode(core.stageAttachment(name: name, mime: mime, bytes: data))
     }
     func resolveConfirmation(id: String, accepted: Bool) { core.resolveConfirmation(id: id, accepted: accepted) }
+    func answerQuestion(id: String, answer: String, custom: Bool) { core.answerQuestion(id: id, answer: answer, custom: custom) }
+    func skipQuestion(id: String) { core.skipQuestion(id: id) }
 
     // MARK: agents, providers, settings
 

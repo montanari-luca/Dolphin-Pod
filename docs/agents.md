@@ -27,3 +27,11 @@ Coding and long-horizon agents (Rick, Micheal, Jordan, Viktor, Ducky) can hand a
 with the `delegate_to_agent` tool. The delegate answers in the chat under their own name, with the permissions the caller
 has in that chat. Amelia only ever runs when you ask for a check (or @mention her), and she always goes after the agent whose work she checks.
 Robert needs a workspace folder in the chat. Luna needs web access turned on.
+
+## Asking you questions
+
+Any agent with a tool-capable model can pause its work and ask you a question with the `ask_user` tool. A panel appears
+above the message box with up to four choices the agent wrote, plus an **Other…** field where you type your own answer.
+Click a choice (or press `1` to `4`), or press **Skip** to let the agent use its best judgment. The agent waits as long as
+it takes; **Stop** dismisses the question and ends the run. Agents don't ask in automations, in runs started from another
+device, or when working as a delegate.

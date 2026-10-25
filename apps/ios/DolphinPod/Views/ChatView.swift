@@ -28,6 +28,7 @@ struct ChatView: View {
                 .onChange(of: messages.last?.content.count) { _, _ in scroll(proxy, animated: false) }
                 .onAppear { scroll(proxy, animated: false) }
             }
+            QuestionPanel(chatId: chatId)
             Composer(chatId: chatId)
         }
         .background(PodBackground())

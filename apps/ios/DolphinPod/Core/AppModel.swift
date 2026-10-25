@@ -43,6 +43,7 @@ final class AppModel {
     var remoteTargets: [DeviceInfo] = []
     var toasts: [Toast] = []
     var confirmation: (id: String, title: String, body: String)?
+    var questions: [PendingQuestion] = []
     var update: UpdateInfo?
     var lastRoute: (path: String, target: String)?
 
@@ -236,6 +237,8 @@ final class AppModel {
         case .settingChanged(let key, let value): settings[key] = value
         case .usageUpdated(let u): usage[u.agentId] = u
         case .confirmRequest(let id, let title, let body): confirmation = (id, title, body)
+        case .questionRequest(let q): questions.removeAll { $0.id == q.id }; questions.append(q)
+        case .questionClosed(let id): questions.removeAll { $0.id == id }
         case .updateAvailable(let version, let url): update = UpdateInfo(current: self.version, latest: version, available: true, url: url)
         case .toast(let level, let text): toast(level, text)
         case .syncStatusChanged(let s):
