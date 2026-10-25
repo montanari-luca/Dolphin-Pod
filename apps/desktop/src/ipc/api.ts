@@ -53,6 +53,9 @@ export interface Backend {
   actionLog(chatId: string): Promise<ActionLogEntry[]>;
   usageAll(): Promise<UsageStats[]>;
   resolveConfirmation(id: string, accepted: boolean): Promise<void>;
+  /** Answer an agent's question with one of its option labels, or `custom` text the user wrote. */
+  answerQuestion(id: string, answer: string, custom: boolean): Promise<void>;
+  skipQuestion(id: string): Promise<void>;
   listRoles(): Promise<UserRole[]>;
   saveRole(role: UserRole): Promise<UserRole>;
   deleteRole(roleId: string): Promise<void>;

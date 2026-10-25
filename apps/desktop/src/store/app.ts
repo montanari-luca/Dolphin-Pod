@@ -5,6 +5,7 @@ import type {
   Chat,
   CoreEvent,
   Message,
+  QuestionOption,
   PermissionGrant,
   ProviderConfig,
   ProviderKindInfo,
@@ -16,6 +17,14 @@ import { backend, errorText, type AppInfo, type Backend, type Settings } from "@
 
 export type View = "chat" | "settings" | "automations";
 export type SettingsTab = "profile" | "general" | "providers" | "agents" | "preferences" | "sync" | "remote" | "appearance" | "about";
+
+export interface PendingQuestion {
+  id: string;
+  chatId: string;
+  agentId: string;
+  question: string;
+  options: QuestionOption[];
+}
 
 export interface Toast {
   id: number;
@@ -46,6 +55,7 @@ interface State {
   providers: ProviderConfig[];
   kinds: ProviderKindInfo[];
   confirms: { id: string; title: string; body: string }[];
+  questions: PendingQuestion[];
   toasts: Toast[];
   update: { version: string; url: string } | null;
   sync: SyncStatus | null;
@@ -86,6 +96,7 @@ export const useApp = create<State>((set, get) => ({
   providers: [],
   kinds: [],
   confirms: [],
+  questions: [],
   toasts: [],
   update: null,
   sync: null,
@@ -233,6 +244,14 @@ export const useApp = create<State>((set, get) => ({
         break;
       case "confirmRequest":
         set((s) => ({ confirms: [...s.confirms, { id: e.id, title: e.title, body: e.body }] }));
+        break;
+      case "questionRequest":
+        set((s) => ({
+          questions: [...s.questions.filter((q) => q.id !== e.id), { id: e.id, chatId: e.chatId, agentId: e.agentId, question: e.question, options: e.options }],
+        }));
+        break;
+      case "questionClosed":
+        set((s) => ({ questions: s.questions.filter((q) => q.id !== e.id) }));
         break;
       case "syncStatusChanged":
         set({ sync: e.status });

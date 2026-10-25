@@ -23,6 +23,14 @@ describe("store event handling", () => {
     expect(m.reasoning).toBe("hmm ");
   });
 
+  it("shows a question until it is closed", () => {
+    const { apply } = useApp.getState();
+    apply({ type: "questionRequest", id: "q1", chatId: "c", agentId: "a", question: "Which?", options: [{ label: "A", description: null }] });
+    expect(useApp.getState().questions.map((q) => q.id)).toEqual(["q1"]);
+    apply({ type: "questionClosed", id: "q1" });
+    expect(useApp.getState().questions).toEqual([]);
+  });
+
   it("applies cleanup removals", () => {
     const { apply } = useApp.getState();
     apply({ type: "messageCreated", message: msg("a") });

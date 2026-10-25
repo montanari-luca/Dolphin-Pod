@@ -29,6 +29,8 @@ export function tauriBackend(): Backend {
     actionLog: (chatId) => invoke("action_log", { chatId }),
     usageAll: () => invoke("usage_all"),
     resolveConfirmation: (id, accepted) => invoke("resolve_confirmation", { id, accepted }),
+    answerQuestion: (id, answer, custom) => invoke("answer_question", { id, answer, custom }),
+    skipQuestion: (id) => invoke("skip_question", { id }),
     listRoles: () => invoke("list_roles"),
     saveRole: (role) => invoke("save_role", { role }),
     deleteRole: (roleId) => invoke("delete_role", { roleId }),

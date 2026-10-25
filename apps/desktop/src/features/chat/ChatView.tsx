@@ -11,6 +11,7 @@ import { ChatSettingsDialog, CleanChatDialog } from "./ChatDialogs";
 import { Composer, type ComposerHandle } from "./Composer";
 import { MembersPanel } from "./MembersPanel";
 import { MessageList } from "./MessageList";
+import { QuestionPanel } from "./QuestionPanel";
 
 export function ChatView({ chat }: { chat: Chat }) {
   const api = useApp((s) => s.api);
@@ -108,6 +109,7 @@ export function ChatView({ chat }: { chat: Chat }) {
         </header>
 
         <MessageList chat={chat} onSuggest={(t) => composer.current?.setText(t)} />
+        <QuestionPanel chatId={chat.id} />
         <Composer
           ref={composer}
           chat={chat}

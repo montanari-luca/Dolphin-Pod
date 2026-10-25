@@ -144,6 +144,7 @@ export function mockBackend(): Backend {
     emit({ type: "messageCreated", message: structuredClone(m) });
   };
   const update = (m: Message) => emit({ type: "messageUpdated", message: structuredClone(m) });
+  const pendingAsk = new Map<string, { chatId: string; agentId: string }>();
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   async function stream(chatId: string, agentId: string, kind: Message["kind"], routing: object) {
@@ -218,6 +219,15 @@ export function mockBackend(): Backend {
       if (mention) user.mentions = [mention.id];
       push(user);
       (async () => {
+        // Demo of the questions panel: "@Rick ask me ..." makes the agent ask a question.
+        if (mention && /\bask me\b/i.test(text)) {
+          const qid = `q-${Date.now()}`;
+          pendingAsk.set(qid, { chatId, agentId: mention.id });
+          return emit({
+            type: "questionRequest", id: qid, chatId, agentId: mention.id, question: "Which language should I use?",
+            options: [{ label: "TypeScript", description: "Matches the rest of the project" }, { label: "Rust", description: "Faster, more setup" }, { label: "Python", description: null }],
+          });
+        }
         if (mention) return stream(chatId, mention.id, "text", { via: "mention" });
         const ack = msg(chatId, id("roger"), "ack", "Give me a sec, I'll find the right person for this.");
         ack.meta = { routing: { status: "routing" } };
@@ -257,6 +267,20 @@ export function mockBackend(): Backend {
     actionLog: async () => [],
     usageAll: async () => [...usage.values()],
     resolveConfirmation: async () => {},
+    async answerQuestion(qid, answer) {
+      const ask = pendingAsk.get(qid);
+      pendingAsk.delete(qid);
+      emit({ type: "questionClosed", id: qid });
+      if (ask) {
+        const m = msg(ask.chatId, ask.agentId, "text", `Got it, going with **${answer}**.`);
+        m.status = "done";
+        push(m);
+      }
+    },
+    async skipQuestion(qid) {
+      pendingAsk.delete(qid);
+      emit({ type: "questionClosed", id: qid });
+    },
     listRoles: async () => structuredClone(roles),
     async saveRole(r) {
       if (roles.some((x) => x.id !== r.id && x.name.toLowerCase() === r.name.trim().toLowerCase())) throw `you already have a role called ${r.name}`;
