@@ -134,3 +134,84 @@ async fn parallel_web_calls_in_one_step_come_back_in_order() {
     let ids: Vec<String> = second.messages.iter().filter(|m| m.role == Role::Tool).filter_map(|m| m.tool_call_id.clone()).collect();
     assert_eq!(ids, ["c1", "c2", "c3"]);
 }
+
+fn user_said(req: &ChatRequest, word: &str) -> bool {
+    req.messages.iter().rev().find(|m| m.role == Role::User).is_some_and(|m| m.text_content().to_lowercase().contains(word))
+}
+
+fn tool_results(req: &ChatRequest) -> Vec<String> {
+    req.messages.iter().filter(|m| m.role == Role::Tool).map(|m| m.text_content()).collect()
+}
+
+fn git_pod(script: impl Fn(&ChatRequest) -> Vec<ProviderEvent> + Send + Sync + 'static, configure: &[&str]) -> (Pod, tempfile::TempDir, Chat) {
+    let p = pod(configure, script);
+    let ws = tempfile::tempdir().unwrap();
+    std::process::Command::new("git").args(["init", "-q", "-b", "main"]).current_dir(ws.path()).status().unwrap();
+    let mut c = chat(&p.core, "Coding");
+    c.workspace_path = Some(ws.path().to_string_lossy().into_owned());
+    p.core.update_chat(c.clone()).unwrap();
+    p.core.grant_permission(&c.id, &agent(&p.core, "robert").id, PermissionLevel::Full).unwrap();
+    (p, ws, c)
+}
+
+#[tokio::test]
+async fn robert_needs_a_fresh_user_confirmation_for_destructive_git() {
+    if std::process::Command::new("git").arg("--version").output().is_err() {
+        return;
+    }
+    let (p, ws, coding) = git_pod(
+        |req| {
+            let results = tool_results(req);
+            let clean = |confirmed: bool| call(&format!("g{}", results.len()), "git", json!({ "args": ["clean", "-fd"], "confirmed": confirmed }));
+            if user_said(req, "yes") {
+                // After the user said yes: run it confirmed once.
+                if results.is_empty() { vec![clean(true)] } else { vec![text("Cleaned.")] }
+            } else {
+                // First turn: try plain, then forge a confirmation within the same run, then ask.
+                match results.len() {
+                    0 => vec![clean(false)],
+                    1 => vec![clean(true)],
+                    _ => vec![text("Shall I run `git clean -fd`?")],
+                }
+            }
+        },
+        &["robert"],
+    );
+    std::fs::write(ws.path().join("junk.txt"), "x").unwrap();
+    let robert = agent(&p.core, "robert");
+
+    p.core.send_message(&coding.id, "@Robert clean the untracked files", vec![]).await.unwrap();
+    let msgs = wait_for(&p.core, &coding.id, done_by(&p.core, "robert")).await;
+    let first = msgs.iter().find(|m| m.agent_id.as_deref() == Some(&robert.id)).unwrap();
+    assert_eq!(first.content, "Shall I run `git clean -fd`?");
+    assert!(ws.path().join("junk.txt").exists(), "nothing ran: no user turn since the question");
+    {
+        let reqs = p.provider.requests.lock().unwrap();
+        let last = reqs.last().unwrap();
+        assert!(tool_results(last).iter().all(|r| r.starts_with("Not run.")), "{:?}", tool_results(last));
+    }
+    assert_eq!(first.meta["gitPending"][0], "clean -fd");
+
+    p.core.send_message(&coding.id, "@Robert yes, go ahead", vec![]).await.unwrap();
+    wait_for(&p.core, &coding.id, |m| m.iter().filter(|m| m.agent_id.as_deref() == Some(&robert.id) && m.status == MessageStatus::Done).count() == 2).await;
+    assert!(!ws.path().join("junk.txt").exists(), "ran once the user confirmed");
+
+    // The confirmation was spent: asking to run it confirmed again does nothing.
+    std::fs::write(ws.path().join("junk2.txt"), "x").unwrap();
+    p.core.send_message(&coding.id, "@Robert yes again", vec![]).await.unwrap();
+    wait_for(&p.core, &coding.id, |m| m.iter().filter(|m| m.agent_id.as_deref() == Some(&robert.id) && m.status == MessageStatus::Done).count() == 3).await;
+    assert!(ws.path().join("junk2.txt").exists(), "a spent confirmation cannot be reused");
+}
+
+#[tokio::test]
+async fn only_robert_gets_the_git_tool() {
+    let (p, _ws, coding) = git_pod(|_| vec![text("ok")], &["robert", "rick"]);
+    p.core.send_message(&coding.id, "@Robert hi", vec![]).await.unwrap();
+    p.core.send_message(&coding.id, "@Rick hi", vec![]).await.unwrap();
+    wait_for(&p.core, &coding.id, |m| m.iter().filter(|m| m.agent_id.is_some() && m.status == MessageStatus::Done && m.kind == MessageKind::Text).count() >= 2).await;
+    let reqs = p.provider.requests.lock().unwrap();
+    for r in reqs.iter() {
+        let has = r.tools.iter().any(|t| t.name == "git");
+        assert_eq!(has, who(r) == "Robert", "{}", who(r));
+    }
+}

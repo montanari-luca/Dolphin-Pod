@@ -144,6 +144,7 @@ pub fn summarize(name: &str, args: &Value) -> String {
         "run_command" => format!("Ran `{}`", truncate(&a("command"), 80)),
         "web_search" => format!("Searched the web for \"{}\"", truncate(&a("query"), 60)),
         "fetch_page" => format!("Opened {}", truncate(&a("url"), 80)),
+        "git" => format!("Ran `git {}`", truncate(&crate::gittool::parse_args(args).map(|a| crate::gittool::normalize(&a)).unwrap_or_default(), 80)),
         "generate_image" => "Generated an image".into(),
         "context_retrieve" => "Re-read a compressed result".into(),
         other => format!("Called {other}"),

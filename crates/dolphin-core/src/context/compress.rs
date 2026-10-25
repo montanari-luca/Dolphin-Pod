@@ -205,6 +205,7 @@ fn detect(tool: &str, text: &str) -> Kind {
         "search" => return Kind::Search,
         "list_dir" => return Kind::Listing,
         "fetch_page" | "web_search" => return Kind::Prose,
+        "git" => return Kind::Log,
         _ => {}
     }
     let sample: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).take(12).collect();

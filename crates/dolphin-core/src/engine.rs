@@ -22,6 +22,7 @@ use crate::tools;
 use crate::util::{now_ms, truncate};
 
 mod ctx;
+mod git;
 
 const MAX_TOOL_STEPS: usize = 40;
 /// How often one run may recover from a provider rejecting the prompt as too long.
@@ -500,6 +501,11 @@ impl Core {
         if is_image_agent && model.tools {
             tool_specs.push(tools::image_tool());
         }
+        // Robert's git tool: needs a repository folder to work in.
+        let has_git = agent.specialty == "git" && workspace.is_some() && model.tools;
+        if has_git {
+            tool_specs.push(crate::gittool::spec());
+        }
         let ctx_cfg = ContextSettings::load(&self.db);
         let mut rc = RunContext::new(context::Budget::new(window::resolve(&model, cfg.kind, ctx_cfg.local_window), ctx_cfg.compact_at), ctx_cfg);
         if ctx_cfg.compress_tools && model.tools {
@@ -735,6 +741,28 @@ impl Core {
                     tokio::select! {
                         r = self.generate_image(agent, msg, call.arguments["prompt"].as_str().unwrap_or_default()) => r,
                         _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
+                    }
+                } else if call.name == "git" {
+                    match (&workspace, has_git) {
+                        (Some(ws), true) => {
+                            let confirmed = call.arguments["confirmed"].as_bool() == Some(true)
+                                && crate::gittool::parse_args(&call.arguments).map(|a| self.take_git_confirmation(&turn.chat.id, &crate::gittool::normalize(&a))).unwrap_or(false);
+                            let out = tokio::select! {
+                                r = crate::gittool::execute(std::path::Path::new(ws), level, &call.arguments, confirmed) => r,
+                                _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
+                            };
+                            out.map(|o| {
+                                if let Some(p) = o.pending {
+                                    match msg.meta["gitPending"].as_array_mut() {
+                                        Some(list) if list.iter().any(|c| c.as_str() == Some(&p)) => {}
+                                        Some(list) => list.push(json!(p)),
+                                        None => msg.meta["gitPending"] = json!([p]),
+                                    }
+                                }
+                                o.text
+                            })
+                        }
+                        _ => Err(CoreError::invalid("unknown tool 'git'")),
                     }
                 } else if let Some(done) = web_results.remove(&call_idx) {
                     done
