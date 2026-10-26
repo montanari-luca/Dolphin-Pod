@@ -329,6 +329,12 @@ impl Core {
         {
             return Err(CoreError::invalid(format!("'{p}' is not an existing folder")));
         }
+        // A folder that was already set stays usable; only a newly chosen one has to pass the safety check.
+        if let Some(p) = &c.workspace_path
+            && self.db.get_chat(&c.id).ok().and_then(|old| old.workspace_path).as_deref() != Some(p.as_str())
+        {
+            crate::permissions::check_workspace(Path::new(p))?;
+        }
         let mut c = c;
         // Moderator and orchestrator are always members.
         for a in self.db.list_agents()? {

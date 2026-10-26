@@ -604,6 +604,7 @@ impl Core {
         let mut last_sig: Option<(String, usize)> = None;
         let mut generated_image = false;
         let mut overflow_retries = 0u32;
+        let mut finished = false;
 
         for _step in 0..MAX_TOOL_STEPS {
             self.fit_context(turn, agent, &mut rc, &mut req, &mut run_start, volatile, summarizer.as_ref(), false).await?;
@@ -738,6 +739,7 @@ impl Core {
                 msg.meta["context"] = rc.stats.to_json();
             }
             if calls.is_empty() {
+                finished = true;
                 break;
             }
 
@@ -877,6 +879,15 @@ impl Core {
                 let output = if ok { rc.shrink_tool_output(&call.name, output) } else { output };
                 req.messages.push(ChatMessage::tool_result(call, output));
             }
+        }
+
+        // Running out of steps used to end the run silently; say so, so a half-finished job isn't mistaken for a finished one.
+        if !finished {
+            if !msg.content.is_empty() {
+                msg.content.push_str("\n\n");
+            }
+            msg.content.push_str(&format!("_Stopped after {MAX_TOOL_STEPS} tool steps; the work may be unfinished. Ask me to continue._"));
+            self.save_message(msg)?;
         }
 
         // Image agent without tool support: render the <image_prompt> she wrote.

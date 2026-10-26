@@ -82,6 +82,37 @@ pub fn resolve_in_workspace(workspace: &Path, requested: &str) -> Result<PathBuf
     Ok(resolved)
 }
 
+/// Refuse file writes into a `.git` folder. Git runs outside the command sandbox with the user's credentials,
+/// so a planted hook or config entry would run with more power than the agent that wrote it.
+pub fn check_writable(workspace: &Path, resolved: &Path) -> Result<()> {
+    let root = workspace.canonicalize().unwrap_or_else(|_| workspace.to_path_buf());
+    let rel = resolved.strip_prefix(&root).unwrap_or(resolved);
+    if rel.components().any(|c| matches!(c, Component::Normal(n) if n == ".git")) {
+        return Err(CoreError::Permission("writing inside .git is not allowed; use the git tool (Robert) instead".into()));
+    }
+    Ok(())
+}
+
+/// A workspace gives an agent the run of a folder, so refuse the ones that are far too broad or hold credentials.
+pub fn check_workspace(path: &Path) -> Result<()> {
+    let p = path.canonicalize().map_err(|e| CoreError::invalid(format!("'{}' is not usable: {e}", path.display())))?;
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).and_then(|h| PathBuf::from(h).canonicalize().ok());
+    let too_broad = p.parent().is_none() || home.as_ref().is_some_and(|h| h.starts_with(&p));
+    let holds_secrets = home.as_ref().is_some_and(|h| {
+        [".ssh", ".aws", ".gnupg", ".config/gh", ".docker", "Library/Keychains"].iter().any(|d| {
+            let d = h.join(d);
+            d.starts_with(&p) || p.starts_with(&d)
+        })
+    });
+    if too_broad || holds_secrets {
+        return Err(CoreError::invalid(format!(
+            "'{}' is too broad or holds credentials; pick the folder of one project instead",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
 fn escape(p: &str) -> CoreError {
     CoreError::Permission(format!("'{p}' is outside the chat's workspace folder"))
 }
@@ -89,6 +120,26 @@ fn escape(p: &str) -> CoreError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn writes_into_dot_git_are_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        assert!(check_writable(&root, &root.join(".git/hooks/pre-commit")).is_err());
+        assert!(check_writable(&root, &root.join("sub/.git/config")).is_err());
+        assert!(check_writable(&root, &root.join("src/main.rs")).is_ok());
+        assert!(check_writable(&root, &root.join(".gitignore")).is_ok());
+    }
+
+    #[test]
+    fn broad_or_credential_workspaces_are_refused() {
+        assert!(check_workspace(Path::new("/")).is_err());
+        let dir = tempfile::tempdir().unwrap();
+        assert!(check_workspace(dir.path()).is_ok());
+        if let Some(h) = std::env::var_os("HOME") {
+            assert!(check_workspace(Path::new(&h)).is_err());
+        }
+    }
 
     #[test]
     fn read_only_blocks_writes_and_commands() {

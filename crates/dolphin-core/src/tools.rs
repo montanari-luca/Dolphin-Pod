@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 use crate::error::{CoreError, Result};
 use crate::model::PermissionLevel;
-use crate::permissions::{check, resolve_in_workspace};
+use crate::permissions::{check, check_writable, resolve_in_workspace};
 use crate::providers::ToolSpec;
 use crate::util::truncate;
 use crate::websearch;
@@ -293,6 +293,7 @@ pub async fn execute(workspace: &Path, level: PermissionLevel, name: &str, args:
         }
         "write_file" => {
             let p = resolve_in_workspace(workspace, s(args, "path")?)?;
+            check_writable(workspace, &p)?;
             let content = s(args, "content")?;
             if let Some(parent) = p.parent() {
                 tokio::fs::create_dir_all(parent).await?;
@@ -302,6 +303,7 @@ pub async fn execute(workspace: &Path, level: PermissionLevel, name: &str, args:
         }
         "edit_file" => {
             let p = resolve_in_workspace(workspace, s(args, "path")?)?;
+            check_writable(workspace, &p)?;
             let (old, new) = (s(args, "old")?, s(args, "new")?);
             let text = tokio::fs::read_to_string(&p).await?;
             let count = text.matches(old).count();
