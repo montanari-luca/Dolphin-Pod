@@ -31,3 +31,18 @@ Pre-approved commands only match a single plain command: anything with `;`, `&`,
 parentheses or a backslash is always asked about, so `npm test; rm -rf ~` never rides in on `npm test`.
 
 Agents cannot write inside any `.git` folder; git work goes through the git tool (Robert).
+
+## Undoing a run
+
+Before an agent's first file change, command or git write in a run, Dolphin Pod snapshots the workspace; when the run
+ends it snapshots again. The agent's message then shows **Changed N files** with the file list, the full diff on
+request, and a **Revert** button.
+
+- Reverting puts back only the files that run changed. A file you (or another agent) edited again afterwards is left
+  alone and listed. The state just before a revert is snapshotted too, so nothing is lost by pressing it.
+- Snapshots live in a separate git repository in the app's data folder, never in your project, and your project's own
+  `.git` is not touched. Your `.gitignore` is honoured, and `node_modules`, `target` and virtualenvs are always left out.
+  A nested repository inside the workspace is recorded as a whole, not file by file.
+- This needs `git` installed. Without it, runs still work and the message says undo is unavailable.
+- Snapshots stay on the device that made them. Reverting a run that was synced from another device is refused with a
+  clear message. Deleting a chat deletes its snapshots.

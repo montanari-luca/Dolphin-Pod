@@ -11,6 +11,7 @@ import type {
   ModelInfo,
   PermissionGrant,
   ShellPolicy,
+  RevertReport,
   ProviderConfig,
   ProviderKind,
   ProviderKindInfo,
@@ -266,6 +267,8 @@ export function mockBackend(): Backend {
       return gr;
     },
     grants: async (chatId) => grants.filter((x) => x.chatId === chatId),
+    runDiff: async () => "diff --git a/notes.txt b/notes.txt\n--- a/notes.txt\n+++ b/notes.txt\n@@ -1 +1,2 @@\n original\n+changed\n",
+    revertRun: async (): Promise<RevertReport> => ({ restored: ["notes.txt"], skipped: [] }),
     shellPolicy: async (chatId) => shellPolicies.get(chatId) ?? { network: false, allowCommands: [] },
     async setShellPolicy(chatId, policy) {
       shellPolicies.set(chatId, policy);

@@ -13,6 +13,7 @@ import type {
   PermissionGrant,
   PermissionLevel,
   ShellPolicy,
+  RevertReport,
   RemoteSettings,
   ProviderConfig,
   ProviderKindInfo,
@@ -51,6 +52,10 @@ export interface Backend {
   approvePlan(messageId: string): Promise<void>;
   grantPermission(chatId: string, agentId: string, level: PermissionLevel): Promise<PermissionGrant>;
   grants(chatId: string): Promise<PermissionGrant[]>;
+  /** The unified diff of everything an agent's message changed in the workspace. */
+  runDiff(messageId: string): Promise<string>;
+  /** Put the files that message changed back the way they were. */
+  revertRun(messageId: string): Promise<RevertReport>;
   /** How commands behave in a chat: network access and pre-approved command prefixes. Stays on this device. */
   shellPolicy(chatId: string): Promise<ShellPolicy>;
   setShellPolicy(chatId: string, policy: ShellPolicy): Promise<ShellPolicy>;

@@ -1,12 +1,12 @@
 import { AnimatePresence, motion } from "motion/react";
-import { AlertTriangle, ArrowRight, CheckCircle2, ChevronRight, CircleSlash, ClipboardList, Copy, FileText, Loader2, Settings2, ShieldAlert, Sparkles, Wrench } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronRight, CircleSlash, ClipboardList, Copy, FileText, Loader2, Settings2, ShieldAlert, Sparkles, Undo2, Wrench } from "lucide-react";
 import { memo, useEffect, useState } from "react";
-import type { Agent, Attachment, Message } from "@dolphin/shared";
+import type { Agent, Attachment, FileChange, Message, RevertReport } from "@dolphin/shared";
 import { AgentAvatar, AgentHoverCard, AgentName } from "@/components/agent";
 import { UserAvatar, UserHoverCard, UserNameText } from "@/components/user";
 import { Markdown } from "@/components/Markdown";
 import { ThinkingBlock } from "@/components/ThinkingBlock";
-import { Badge, Button, Dialog } from "@/components/ui";
+import { Badge, Button, ConfirmDialog, Dialog } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { formatBytes, formatDuration, formatTime, formatTokens } from "@/lib/format";
 import { useApp } from "@/store/app";
@@ -15,6 +15,8 @@ type Meta = {
   routing?: { status?: string; mode?: string; intent?: string; targets?: string[]; source?: string; needsSetup?: boolean; error?: string | null; via?: string; brief?: string; rewrite?: string };
   tools?: { name: string; summary: string; ok: boolean; allowed: boolean; error?: string | null }[];
   plan?: { approved?: boolean };
+  changes?: { before: string; after: string; files: FileChange[]; reverted: boolean; revert?: RevertReport };
+  changesUnavailable?: string;
   needsSetup?: boolean;
   notice?: string;
   remote?: boolean;
@@ -72,6 +74,8 @@ export const MessageItem = memo(function MessageItem({ message, agent, grouped }
         )}
 
         {meta.tools && meta.tools.length > 0 && <ToolActivity tools={meta.tools} />}
+        {meta.changes && <Changes message={message} changes={meta.changes} />}
+        {meta.changesUnavailable && !meta.changes && <div className="mt-1 text-[11.5px] text-faint">Undo unavailable for this run: {meta.changesUnavailable}</div>}
         {message.attachments.length > 0 && <Attachments items={message.attachments} />}
         {message.status === "error" && <ErrorBox message={message} agent={agent} needsSetup={meta.needsSetup} />}
         {message.status === "cancelled" && message.content !== "_Stopped._" && <div className="mt-1 inline-flex items-center gap-1 text-[11.5px] text-faint"><CircleSlash className="size-3" /> Stopped</div>}
@@ -178,6 +182,80 @@ function ToolActivity({ tools }: { tools: NonNullable<Meta["tools"]> }) {
           <Wrench className="size-3" /> {open ? "Show less" : `Show all ${tools.length} actions`}
         </button>
       )}
+    </div>
+  );
+}
+
+const KIND_LABEL = { added: "new", modified: "edited", deleted: "deleted" } as const;
+const KIND_TONE = { added: "text-success", modified: "text-muted", deleted: "text-danger" } as const;
+
+/** What the run changed in the workspace: the files, the diff on request, and a one-click revert. */
+function Changes({ message, changes }: { message: Message; changes: NonNullable<Meta["changes"]> }) {
+  const api = useApp((s) => s.api);
+  const run = useApp((s) => s.run);
+  const [open, setOpen] = useState(false);
+  const [patch, setPatch] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const added = changes.files.reduce((n, f) => n + f.added, 0);
+  const removed = changes.files.reduce((n, f) => n + f.removed, 0);
+  const toggle = () => {
+    setOpen((o) => !o);
+    if (!open && patch === null && api) api.runDiff(message.id).then(setPatch).catch((e) => setPatch(`Could not load the diff: ${e}`));
+  };
+  return (
+    <div className="mt-2 rounded-md border border-line bg-hover/40 px-2.5 py-1.5">
+      <div className="flex items-center gap-2 text-[12px]">
+        <button onClick={toggle} className="inline-flex items-center gap-1.5 text-muted hover:text-fg transition-ui">
+          <ChevronRight className={cn("size-3 transition-transform", open && "rotate-90")} />
+          Changed {changes.files.length} file{changes.files.length === 1 ? "" : "s"}
+          <span className="font-mono text-success">+{added}</span>
+          <span className="font-mono text-danger">−{removed}</span>
+        </button>
+        <div className="ml-auto">
+          {changes.reverted ? (
+            <Badge tone="neutral">Reverted</Badge>
+          ) : (
+            <Button size="sm" variant="ghost" onClick={() => setConfirming(true)}>
+              <Undo2 className="size-3.5" /> Revert
+            </Button>
+          )}
+        </div>
+      </div>
+      {open && (
+        <div className="mt-1.5 space-y-1.5">
+          <div>
+            {changes.files.map((f) => (
+              <div key={f.path} className="flex items-center gap-2 py-0.5 text-[12px]">
+                <span className={cn("w-12 shrink-0 text-[11px]", KIND_TONE[f.kind])}>{KIND_LABEL[f.kind]}</span>
+                <span className="font-mono text-muted truncate">{f.path}</span>
+                <span className="ml-auto font-mono text-[11px] text-faint">+{f.added} −{f.removed}</span>
+              </div>
+            ))}
+          </div>
+          {patch !== null && (
+            <pre className="selectable max-h-72 overflow-auto rounded-md border border-line bg-black/20 p-2 font-mono text-[11.5px] leading-snug">
+              {patch.split("\n").map((l, i) => (
+                <div key={i} className={l.startsWith("+") && !l.startsWith("+++") ? "text-success" : l.startsWith("-") && !l.startsWith("---") ? "text-danger" : l.startsWith("@@") ? "text-accent" : "text-muted"}>
+                  {l || " "}
+                </div>
+              ))}
+            </pre>
+          )}
+        </div>
+      )}
+      {changes.reverted && changes.revert && changes.revert.skipped.length > 0 && (
+        <div className="mt-1 text-[11.5px] text-warning">Left alone because they changed again afterwards: {changes.revert.skipped.join(", ")}</div>
+      )}
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title="Revert these changes?"
+        description="Files this run changed go back to how they were before it started. Files that were edited again since are left alone."
+        confirmLabel="Revert"
+        onConfirm={async () => {
+          if (api) await run(api.revertRun(message.id), "Changes reverted");
+        }}
+      />
     </div>
   );
 }

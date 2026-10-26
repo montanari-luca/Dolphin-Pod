@@ -121,6 +121,16 @@ fn grant_permission(core: State<CoreRef>, chat_id: String, agent_id: String, lev
 }
 
 #[tauri::command]
+async fn run_diff(core: State<'_, CoreRef>, message_id: String) -> Res<String> {
+    core.run_diff(&message_id).await
+}
+
+#[tauri::command]
+async fn revert_run(core: State<'_, CoreRef>, message_id: String) -> Res<dolphin_core::checkpoint::RevertReport> {
+    core.revert_run(&message_id).await
+}
+
+#[tauri::command]
 fn shell_policy(core: State<CoreRef>, chat_id: String) -> Res<ShellPolicy> {
     core.shell_policy(&chat_id)
 }
@@ -439,6 +449,8 @@ pub fn run() {
             approve_plan,
             grant_permission,
             grants,
+            run_diff,
+            revert_run,
             shell_policy,
             set_shell_policy,
             action_log,
