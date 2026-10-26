@@ -12,6 +12,7 @@ import type {
   ModelInfo,
   PermissionGrant,
   PermissionLevel,
+  ShellPolicy,
   RemoteSettings,
   ProviderConfig,
   ProviderKindInfo,
@@ -50,6 +51,9 @@ export interface Backend {
   approvePlan(messageId: string): Promise<void>;
   grantPermission(chatId: string, agentId: string, level: PermissionLevel): Promise<PermissionGrant>;
   grants(chatId: string): Promise<PermissionGrant[]>;
+  /** How commands behave in a chat: network access and pre-approved command prefixes. Stays on this device. */
+  shellPolicy(chatId: string): Promise<ShellPolicy>;
+  setShellPolicy(chatId: string, policy: ShellPolicy): Promise<ShellPolicy>;
   actionLog(chatId: string): Promise<ActionLogEntry[]>;
   usageAll(): Promise<UsageStats[]>;
   resolveConfirmation(id: string, accepted: boolean): Promise<void>;

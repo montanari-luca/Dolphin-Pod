@@ -26,6 +26,8 @@ export function tauriBackend(): Backend {
     approvePlan: (messageId) => invoke("approve_plan", { messageId }),
     grantPermission: (chatId, agentId, level) => invoke("grant_permission", { chatId, agentId, level }),
     grants: (chatId) => invoke("grants", { chatId }),
+    shellPolicy: (chatId) => invoke("shell_policy", { chatId }),
+    setShellPolicy: (chatId, policy) => invoke("set_shell_policy", { chatId, policy }),
     actionLog: (chatId) => invoke("action_log", { chatId }),
     usageAll: () => invoke("usage_all"),
     resolveConfirmation: (id, accepted) => invoke("resolve_confirmation", { id, accepted }),

@@ -1,5 +1,5 @@
-import { Lock, LockOpen } from "lucide-react";
-import type { Agent, Chat } from "@dolphin/shared";
+import { Lock, LockOpen, ShieldQuestion } from "lucide-react";
+import type { Agent, Chat, PermissionLevel } from "@dolphin/shared";
 import { AgentAvatar, AgentHoverCard, AgentNameText } from "@/components/agent";
 import { RoleBadge, UserAvatar, UserHoverCard, UserNameText, useUser } from "@/components/user";
 import { cn } from "@/lib/cn";
@@ -13,6 +13,14 @@ const ACTIVITY_TEXT: Record<string, string> = {
   stuck: "seems stuck",
 };
 
+/** Read-only → asks before acting → full → read-only. */
+const NEXT_LEVEL: Record<PermissionLevel, PermissionLevel> = { read_only: "ask", ask: "full", full: "read_only" };
+const LEVEL_HINT: Record<PermissionLevel, string> = {
+  read_only: "Read-only. Click to let this agent act after asking you first.",
+  ask: "Asks before every file change and command. Click to grant full permissions.",
+  full: "Full agentic permissions. Click to make read-only.",
+};
+
 function Member({ agent, chat, act }: { agent: Agent; chat: Chat; act?: Activity }) {
   const providers = useApp((s) => s.providers);
   const grant = useApp((s) => s.grants[chat.id]?.find((g) => g.agentId === agent.id));
@@ -20,7 +28,8 @@ function Member({ agent, chat, act }: { agent: Agent; chat: Chat; act?: Activity
   const run = useApp((s) => s.run);
   const busy = !!act && act.activity !== "idle";
   const provider = providers.find((p) => p.id === agent.model?.providerId);
-  const full = grant?.level === "full";
+  const level: PermissionLevel = grant?.level ?? "read_only";
+  const full = level === "full";
   const status = busy ? (act?.detail && act.activity !== "thinking" ? act.detail : ACTIVITY_TEXT[act!.activity]) : agent.model ? `${provider?.name ?? ""} · ${agent.model.modelId}` : "no model";
   return (
     <AgentHoverCard agent={agent} side="left">
@@ -32,14 +41,14 @@ function Member({ agent, chat, act }: { agent: Agent; chat: Chat; act?: Activity
         </div>
         {chat.workspacePath && agent.role === "specialist" && (
           <button
-            className={cn("size-6 inline-flex items-center justify-center rounded transition-ui", full ? "text-success hover:bg-success/15" : "text-faint opacity-60 group-hover:opacity-100 hover:bg-active")}
-            title={full ? "Full agentic permissions. Click to make read-only." : "Read-only. Click to grant full agentic permissions."}
+            className={cn("size-6 inline-flex items-center justify-center rounded transition-ui", full ? "text-success hover:bg-success/15" : level === "ask" ? "text-warning hover:bg-warning/15" : "text-faint opacity-60 group-hover:opacity-100 hover:bg-active")}
+            title={LEVEL_HINT[level]}
             onClick={(e) => {
               e.stopPropagation();
-              if (api) void run(api.grantPermission(chat.id, agent.id, full ? "read_only" : "full"));
+              if (api) void run(api.grantPermission(chat.id, agent.id, NEXT_LEVEL[level]));
             }}
           >
-            {full ? <LockOpen className="size-3.5" /> : <Lock className="size-3.5" />}
+            {full ? <LockOpen className="size-3.5" /> : level === "ask" ? <ShieldQuestion className="size-3.5" /> : <Lock className="size-3.5" />}
           </button>
         )}
       </div>

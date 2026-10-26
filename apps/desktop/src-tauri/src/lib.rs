@@ -121,6 +121,16 @@ fn grant_permission(core: State<CoreRef>, chat_id: String, agent_id: String, lev
 }
 
 #[tauri::command]
+fn shell_policy(core: State<CoreRef>, chat_id: String) -> Res<ShellPolicy> {
+    core.shell_policy(&chat_id)
+}
+
+#[tauri::command]
+fn set_shell_policy(core: State<CoreRef>, chat_id: String, policy: ShellPolicy) -> Res<ShellPolicy> {
+    core.set_shell_policy(&chat_id, policy)
+}
+
+#[tauri::command]
 fn grants(core: State<CoreRef>, chat_id: String) -> Res<Vec<PermissionGrant>> {
     core.grants(&chat_id)
 }
@@ -429,6 +439,8 @@ pub fn run() {
             approve_plan,
             grant_permission,
             grants,
+            shell_policy,
+            set_shell_policy,
             action_log,
             usage_all,
             resolve_confirmation,

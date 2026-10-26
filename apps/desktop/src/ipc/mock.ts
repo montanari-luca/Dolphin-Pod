@@ -10,6 +10,7 @@ import type {
   Message,
   ModelInfo,
   PermissionGrant,
+  ShellPolicy,
   ProviderConfig,
   ProviderKind,
   ProviderKindInfo,
@@ -118,6 +119,7 @@ export function mockBackend(): Backend {
   const usage = new Map<string, UsageStats>();
   const providers: ProviderConfig[] = [];
   const grants: PermissionGrant[] = [];
+  const shellPolicies = new Map<string, ShellPolicy>();
   const automations: Automation[] = [];
   let roles: UserRole[] = [
     {
@@ -264,6 +266,11 @@ export function mockBackend(): Backend {
       return gr;
     },
     grants: async (chatId) => grants.filter((x) => x.chatId === chatId),
+    shellPolicy: async (chatId) => shellPolicies.get(chatId) ?? { network: false, allowCommands: [] },
+    async setShellPolicy(chatId, policy) {
+      shellPolicies.set(chatId, policy);
+      return policy;
+    },
     actionLog: async () => [],
     usageAll: async () => [...usage.values()],
     resolveConfirmation: async () => {},

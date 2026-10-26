@@ -1,6 +1,6 @@
 import { Brush, Check, FolderOpen, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { Agent, Chat } from "@dolphin/shared";
+import type { Agent, Chat, ShellPolicy } from "@dolphin/shared";
 import { AgentAvatar } from "@/components/agent";
 import { Button, ConfirmDialog, Dialog, Field, Input, Row, Switch } from "@/components/ui";
 import { CHAT_ICONS } from "@/lib/chatIcons";
@@ -121,16 +121,25 @@ export function ChatSettingsDialog({ chat, open, onOpenChange }: { chat: Chat; o
   const globalCleanup = useApp((s) => s.settings["cleanup.enabled"] !== false);
   const [draft, setDraft] = useState<Chat>(chat);
   const [confirming, setConfirming] = useState<"clean" | "delete" | null>(null);
+  const [policy, setPolicy] = useState<ShellPolicy | null>(null);
+  const [newCommand, setNewCommand] = useState("");
   useEffect(() => {
     if (open) {
       setDraft(chat);
       setConfirming(null);
+      setNewCommand("");
+      setPolicy(null);
+      void api?.shellPolicy(chat.id).then(setPolicy).catch(() => setPolicy({ network: false, allowCommands: [] }));
     }
-  }, [open, chat]);
+  }, [open, chat, api]);
   const specialists = draft.agentIds.filter((id) => agents.find((a) => a.id === id)?.role === "specialist");
   const save = async () => {
     if (!api) return;
+    let next = policy;
+    const pending = newCommand.trim();
+    if (next && pending && !next.allowCommands.includes(pending)) next = { ...next, allowCommands: [...next.allowCommands, pending] };
     const ok = await run(api.updateChat(draft), "Chat updated");
+    if (ok && next) await run(api.setShellPolicy(chat.id, next));
     if (ok) onOpenChange(false);
   };
   return (
@@ -172,7 +181,7 @@ export function ChatSettingsDialog({ chat, open, onOpenChange }: { chat: Chat; o
           </Row>
           <Row
             title="Workspace folder"
-            description={draft.workspacePath ? <span className="font-mono">{draft.workspacePath}</span> : "Agents can read (and, with full permissions, change) files in this folder."}
+            description={draft.workspacePath ? <span className="font-mono">{draft.workspacePath}</span> : "Agents can read (and, with permission, change) files in this folder."}
           >
             <div className="flex gap-1.5">
               {draft.workspacePath && (
@@ -192,6 +201,47 @@ export function ChatSettingsDialog({ chat, open, onOpenChange }: { chat: Chat; o
             </div>
           </Row>
         </div>
+
+        {draft.workspacePath && policy && (
+          <div className="rounded-lg border border-line divide-y divide-[var(--border)] px-3.5">
+            <Row
+              title="Commands can use the network"
+              description="Off by default: commands agents run here cannot reach the internet, so a prompt injected through a web page cannot send your files out. Turn it on for installs and downloads."
+            >
+              <Switch checked={policy.network} onChange={(network) => setPolicy({ ...policy, network })} />
+            </Row>
+            <div className="py-3 space-y-2">
+              <div className="text-[13px] font-medium text-fg">Pre-approved commands</div>
+              <div className="text-[12px] text-muted">
+                For agents set to ask first. A command starting with one of these runs without asking, unless it chains or pipes something else.
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {policy.allowCommands.length === 0 && <span className="text-[12px] text-faint">None yet. “Always allow” in an approval question adds one.</span>}
+                {policy.allowCommands.map((c) => (
+                  <span key={c} className="inline-flex items-center gap-1 rounded-md border border-line bg-hover px-2 py-0.5 font-mono text-[11.5px]">
+                    {c}
+                    <button className="text-faint hover:text-fg" title="Remove" onClick={() => setPolicy({ ...policy, allowCommands: policy.allowCommands.filter((x) => x !== c) })}>
+                      <X className="size-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <Input
+                value={newCommand}
+                placeholder="Add a command prefix, e.g. cargo test"
+                onChange={(e) => setNewCommand(e.target.value)}
+                onKeyDown={(e) => {
+                  const c = newCommand.trim();
+                  if (e.key === "Enter" && c) {
+                    e.preventDefault();
+                    if (!policy.allowCommands.includes(c)) setPolicy({ ...policy, allowCommands: [...policy.allowCommands, c] });
+                    setNewCommand("");
+                  }
+                }}
+              />
+            </div>
+          </div>
+        )}
 
         <div className="flex items-center justify-between gap-3 rounded-lg border border-danger/25 bg-danger/5 px-3.5 py-3">
           <div className="text-[12.5px] text-muted">Clean all messages now, or delete this chat.</div>
