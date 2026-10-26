@@ -425,7 +425,20 @@ pub struct Attachment {
 #[ts(export)]
 pub enum PermissionLevel {
     ReadOnly,
+    /// Like Full, but every file change and command waits for the user's approval (pre-approved commands excepted).
+    Ask,
     Full,
+}
+
+/// How commands behave in one chat. Stays on this device: a trust decision, never synced.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ShellPolicy {
+    /// Commands may reach the network. Off by default.
+    pub network: bool,
+    /// Commands that start with one of these run without asking at the Ask level.
+    pub allow_commands: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

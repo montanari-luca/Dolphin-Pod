@@ -40,6 +40,9 @@ pub fn permissions_text(workspace: Option<&str>, level: PermissionLevel, has_ima
         (Some(ws), PermissionLevel::ReadOnly) => format!(
             "Workspace folder: {ws}\nUse paths relative to the workspace root in tools (e.g. `main.py`, `src/app.ts`); call list_dir first if unsure.\nYou are READ-ONLY right now: you may use read_file, list_dir and search. Writing files and running commands are not permitted. If the task needs them, say so; the user can approve a plan or grant full permissions."
         ),
+        (Some(ws), PermissionLevel::Ask) => format!(
+            "Workspace folder: {ws}\nUse paths relative to the workspace root in tools (e.g. `main.py`, `src/app.ts`); call list_dir first if unsure.\nYou may read, search, write and edit files, and run commands inside the workspace, but the user is asked to approve each write and command first (some commands are pre-approved). If they deny one, do not retry it; adjust or ask what they want. Commands have no network access unless the user turned it on. Every action is logged and shown to the user."
+        ),
         (Some(ws), PermissionLevel::Full) => format!(
             "Workspace folder: {ws}\nUse paths relative to the workspace root in tools (e.g. `main.py`, `src/app.ts`); call list_dir first if unsure.\nYou have full agentic permissions inside the workspace: read, search, write and edit files, and run commands. Every action is logged and shown to the user. Avoid destructive commands unless the user explicitly asked for them."
         ),

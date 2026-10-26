@@ -24,6 +24,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migration_0002_user_roles.sql"),
     include_str!("migration_0003_sync.sql"),
     include_str!("migration_0004_remote.sql"),
+    include_str!("migration_0005_shell_policy.sql"),
 ];
 
 #[derive(Clone)]
@@ -107,6 +108,7 @@ impl Db {
             ("usage", "agent_id"),
             ("permission_grants", "chat_id"),
             ("permission_grants", "agent_id"),
+            ("chat_shell_policy", "chat_id"),
             ("action_log", "chat_id"),
             ("action_log", "agent_id"),
             ("automations", "chat_id"),

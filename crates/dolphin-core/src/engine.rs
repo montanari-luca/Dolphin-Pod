@@ -10,10 +10,11 @@ use tokio_util::sync::CancellationToken;
 
 use crate::attachments;
 use crate::context::{self, ContextSettings, RETRIEVE_TOOL, RunContext, tokens, window};
-use crate::core::Core;
+use crate::core::{Core, QuestionAnswer};
 use crate::error::{CoreError, Result};
 use crate::events::{AgentActivity, CoreEvent};
 use crate::model::*;
+use crate::permissions;
 use crate::providers::{ChatMessage, ChatRequest, Part, Provider, ProviderEvent, Role, ToolCall, image};
 use crate::router::moderator::{self, ModeratorInput};
 use crate::router::{Decision, Mode, ack, mention, orchestrator, prompts, settings_ctl};
@@ -372,15 +373,16 @@ impl Core {
         let before = self.db.grant(chat_id, agent_id)?;
         let g = self.db.set_grant(chat_id, agent_id, level, reason)?;
         self.emit(CoreEvent::GrantChanged { grant: g.clone() });
-        if before.level != level || before.updated_at == 0 && level == PermissionLevel::Full {
+        if before.level != level || before.updated_at == 0 && level >= PermissionLevel::Ask {
             let agent = self.db.get_agent(agent_id)?;
             let lincoln = self.agent_by_slug("lincoln")?;
             let text = match level {
                 PermissionLevel::Full => format!("🔓 {} now has **full agentic permissions** in this chat ({reason}).", agent.name),
+                PermissionLevel::Ask => format!("🙋 {} will **ask before** changing files or running commands in this chat ({reason}).", agent.name),
                 PermissionLevel::ReadOnly => format!("🔒 {} is **read-only** in this chat ({reason}).", agent.name),
             };
             let chat = self.db.get_chat(chat_id)?;
-            let extra = if level == PermissionLevel::Full && chat.workspace_path.is_none() {
+            let extra = if level >= PermissionLevel::Ask && chat.workspace_path.is_none() {
                 " Set a workspace folder in the chat settings so they can work on your files."
             } else {
                 ""
@@ -605,6 +607,8 @@ impl Core {
         let mut generated_image = false;
         let mut overflow_retries = 0u32;
         let mut finished = false;
+        // "Allow file changes for this run": file writes and edits stop asking until the run ends.
+        let mut edits_approved = false;
 
         for _step in 0..MAX_TOOL_STEPS {
             self.fit_context(turn, agent, &mut rc, &mut req, &mut run_start, volatile, summarizer.as_ref(), false).await?;
@@ -857,9 +861,51 @@ impl Core {
                         _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
                     }
                 } else if let Some(ws) = &workspace {
-                    tokio::select! {
-                        r = tools::execute(std::path::Path::new(ws), level, &call.name, &call.arguments) => r,
-                        _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
+                    let policy = self.db.shell_policy(&turn.chat.id)?;
+                    // At the Ask level a write or command waits for the user, unless they already allowed it.
+                    let mut gate: Result<()> = Ok(());
+                    let pre_approved = match call.name.as_str() {
+                        "run_command" => permissions::command_allowed(call.arguments["command"].as_str().unwrap_or(""), &policy.allow_commands),
+                        _ => edits_approved,
+                    };
+                    if permissions::needs_approval(level, &call.name) && !pre_approved {
+                        if !can_ask {
+                            gate = Err(CoreError::Permission(format!(
+                                "{} needs the user's approval, and nobody can answer here (automations, delegated and remote runs cannot ask). Do not retry it.",
+                                tools::summarize(&call.name, &call.arguments)
+                            )));
+                        } else {
+                            let (question, options, prefix) = tools::approval_question(&agent.name, &call.name, &call.arguments);
+                            self.activity(&turn.chat.id, &agent.id, AgentActivity::UsingTool, Some("Waiting for your approval".into()));
+                            _permit = None;
+                            let answer = self.ask(&turn.chat.id, &agent.id, &question, options, &turn.token).await;
+                            _permit = Some(tokio::select! {
+                                p = self.providers.semaphore(&cfg).acquire_owned() => p.map_err(|_| CoreError::Cancelled)?,
+                                _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
+                            });
+                            gate = match answer? {
+                                QuestionAnswer::Choice(c) if c == tools::APPROVE_ONCE => Ok(()),
+                                QuestionAnswer::Choice(c) if c == tools::APPROVE_RUN => {
+                                    edits_approved = true;
+                                    Ok(())
+                                }
+                                QuestionAnswer::Choice(c) if c.starts_with(tools::APPROVE_ALWAYS) && prefix.is_some() => {
+                                    let mut p = policy.clone();
+                                    p.allow_commands.extend(prefix.filter(|x| !p.allow_commands.contains(x)));
+                                    self.db.set_shell_policy(&turn.chat.id, &p)?;
+                                    Ok(())
+                                }
+                                QuestionAnswer::Custom(t) => Err(CoreError::Permission(format!("the user did not approve this and said: \"{t}\". Do not run it; adjust your approach."))),
+                                _ => Err(CoreError::Permission("the user denied this action. Do not retry it; ask what they would like instead.".into())),
+                            };
+                        }
+                    }
+                    match gate {
+                        Err(e) => Err(e),
+                        Ok(()) => tokio::select! {
+                            r = tools::execute(std::path::Path::new(ws), level, policy.network, &call.name, &call.arguments) => r,
+                            _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
+                        },
                     }
                 } else {
                     Err(CoreError::invalid("this chat has no workspace folder"))

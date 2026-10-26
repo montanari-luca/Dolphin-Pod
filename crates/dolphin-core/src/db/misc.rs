@@ -4,7 +4,7 @@ use rusqlite::{OptionalExtension, Row, params};
 
 use super::{Db, enum_str, from_json, parse_enum, to_json};
 use crate::error::{CoreError, Result};
-use crate::model::{ActionLogEntry, Automation, PermissionGrant, PermissionLevel, UsageStats};
+use crate::model::{ActionLogEntry, Automation, PermissionGrant, PermissionLevel, ShellPolicy, UsageStats};
 use crate::util::{new_id, now_ms};
 
 impl Db {
@@ -111,6 +111,25 @@ impl Db {
             reason: "default".into(),
             updated_at: 0,
         }))
+    }
+
+    // ---------------------------------------------------------------- command policy
+
+    pub fn shell_policy(&self, chat_id: &str) -> Result<ShellPolicy> {
+        let row: Option<(bool, String)> = self
+            .conn()
+            .query_row("SELECT network, allow_commands FROM chat_shell_policy WHERE chat_id = ?1", [chat_id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()?;
+        Ok(row.map(|(network, list)| ShellPolicy { network, allow_commands: from_json(Some(list)).unwrap_or_default() }).unwrap_or_default())
+    }
+
+    pub fn set_shell_policy(&self, chat_id: &str, policy: &ShellPolicy) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO chat_shell_policy (chat_id, network, allow_commands, updated_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(chat_id) DO UPDATE SET network = excluded.network, allow_commands = excluded.allow_commands, updated_at = excluded.updated_at",
+            params![chat_id, policy.network, to_json(&policy.allow_commands), now_ms()],
+        )?;
+        Ok(())
     }
 
     pub fn grants_for_chat(&self, chat_id: &str) -> Result<Vec<PermissionGrant>> {

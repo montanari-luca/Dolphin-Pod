@@ -548,6 +548,32 @@ impl Core {
         self.db.grants_for_chat(chat_id)
     }
 
+    pub fn shell_policy(&self, chat_id: &str) -> Result<ShellPolicy> {
+        self.db.get_chat(chat_id)?;
+        self.db.shell_policy(chat_id)
+    }
+
+    /// Set the chat's command policy. Pre-approved commands are cleaned up: one plain command prefix per entry.
+    pub fn set_shell_policy(&self, chat_id: &str, policy: ShellPolicy) -> Result<ShellPolicy> {
+        self.db.get_chat(chat_id)?;
+        let mut allow: Vec<String> = Vec::new();
+        for entry in policy.allow_commands {
+            let entry = entry.split_whitespace().collect::<Vec<_>>().join(" ");
+            if entry.is_empty() {
+                continue;
+            }
+            if !crate::permissions::command_allowed(&entry, std::slice::from_ref(&entry)) {
+                return Err(CoreError::invalid(format!("'{entry}' is not a plain command prefix (no ; & | < > $ ` ( ) or backslashes)")));
+            }
+            if !allow.contains(&entry) {
+                allow.push(entry);
+            }
+        }
+        let policy = ShellPolicy { network: policy.network, allow_commands: allow };
+        self.db.set_shell_policy(chat_id, &policy)?;
+        Ok(policy)
+    }
+
     pub fn action_log(&self, chat_id: &str) -> Result<Vec<ActionLogEntry>> {
         self.db.action_log(chat_id, 200)
     }

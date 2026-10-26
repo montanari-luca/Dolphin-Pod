@@ -92,6 +92,47 @@ pub fn parse_question(args: &Value) -> Result<(String, Vec<crate::events::Questi
     Ok((question, options))
 }
 
+/// Answers the user can give to an approval question; the engine matches on them.
+pub const APPROVE_ONCE: &str = "Allow once";
+pub const APPROVE_RUN: &str = "Allow file changes for this run";
+pub const APPROVE_ALWAYS: &str = "Always allow";
+pub const DENY: &str = "Deny";
+
+/// The question that asks the user to approve a write or command, naming the real operation (not the agent's
+/// description of it). The third value is the command prefix offered as "always allow", if any.
+pub fn approval_question(agent: &str, name: &str, args: &Value) -> (String, Vec<crate::events::QuestionOption>, Option<String>) {
+    let a = |k: &str| args[k].as_str().unwrap_or("");
+    let opt = |label: String, description: Option<&str>| crate::events::QuestionOption { label, description: description.map(String::from) };
+    let (question, mut options, prefix) = match name {
+        "run_command" => {
+            let cmd = a("command");
+            let prefix = crate::permissions::suggested_prefix(cmd);
+            let cwd = a("cwd");
+            let at = if cwd.is_empty() || cwd == "." { String::new() } else { format!(" in {cwd}") };
+            let mut options = vec![opt(APPROVE_ONCE.into(), None)];
+            if let Some(p) = &prefix {
+                options.push(opt(
+                    format!("{APPROVE_ALWAYS} `{p}`"),
+                    Some("Commands that start with this run without asking in this chat from now on."),
+                ));
+            }
+            (format!("{agent} wants to run{at}: {}", truncate(cmd, 300)), options, prefix)
+        }
+        "write_file" => (
+            format!("{agent} wants to write {} ({} characters)", truncate(a("path"), 120), a("content").chars().count()),
+            vec![opt(APPROVE_ONCE.into(), None), opt(APPROVE_RUN.into(), Some("File writes and edits in this run go ahead without asking. Commands still ask."))],
+            None,
+        ),
+        _ => (
+            format!("{agent} wants to edit {}: replace “{}” with “{}”", truncate(a("path"), 120), truncate(a("old"), 70), truncate(a("new"), 70)),
+            vec![opt(APPROVE_ONCE.into(), None), opt(APPROVE_RUN.into(), Some("File writes and edits in this run go ahead without asking. Commands still ask."))],
+            None,
+        ),
+    };
+    options.push(opt(DENY.into(), None));
+    (truncate(&question, 400), options, prefix)
+}
+
 pub fn image_tool() -> ToolSpec {
     spec(
         "generate_image",
@@ -158,7 +199,7 @@ pub async fn execute_web_all(calls: &[(&str, &Value)]) -> Vec<Result<String>> {
     futures::future::join_all(calls.iter().map(|(name, args)| execute_web(name, args))).await
 }
 
-/// Tools offered to an agent. Write tools are only offered with full permissions (and are also
+/// Tools offered to an agent. Write tools are only offered with agentic permissions (and are also
 /// enforced at execution time).
 pub fn specs(has_workspace: bool, level: PermissionLevel) -> Vec<ToolSpec> {
     if !has_workspace {
@@ -180,7 +221,7 @@ pub fn specs(has_workspace: bool, level: PermissionLevel) -> Vec<ToolSpec> {
             "path": { "type": "string", "description": "Folder to search. Default: root." }
         }, "required": ["query"] })),
     ];
-    if level == PermissionLevel::Full {
+    if level >= PermissionLevel::Ask {
         v.push(spec("write_file", "Create or overwrite a file in the workspace.", json!({ "type": "object", "properties": {
             "path": { "type": "string" }, "content": { "type": "string" }
         }, "required": ["path", "content"] })));
@@ -223,7 +264,7 @@ pub fn summarize(name: &str, args: &Value) -> String {
 }
 
 /// Execute a workspace tool. The permission check happens here, not in the prompt.
-pub async fn execute(workspace: &Path, level: PermissionLevel, name: &str, args: &Value) -> Result<String> {
+pub async fn execute(workspace: &Path, level: PermissionLevel, network: bool, name: &str, args: &Value) -> Result<String> {
     if args.get("_invalid_json").is_some() {
         return Err(CoreError::invalid("the tool arguments were not valid JSON; send them again"));
     }
@@ -323,7 +364,7 @@ pub async fn execute(workspace: &Path, level: PermissionLevel, name: &str, args:
             let cwd = resolve_in_workspace(workspace, args["cwd"].as_str().unwrap_or("."))?;
             let secs = args["timeout_seconds"].as_u64().unwrap_or(120).clamp(1, 600);
             let ws = workspace.canonicalize()?;
-            let (mut c, confinement) = crate::sandbox::command(cmd, &ws, &cwd);
+            let (mut c, confinement) = crate::sandbox::command(cmd, &ws, &cwd, network);
             c.kill_on_drop(true).stdin(std::process::Stdio::null());
             let out = match tokio::time::timeout(Duration::from_secs(secs), c.output()).await {
                 Ok(r) => r?,
@@ -338,6 +379,8 @@ pub async fn execute(workspace: &Path, level: PermissionLevel, name: &str, args:
             }
             if confinement == crate::sandbox::Confinement::Unconfined {
                 text.push_str(&format!("\n{}", crate::sandbox::UNCONFINED_NOTE));
+            } else if !network && !out.status.success() {
+                text.push_str(&format!("\n{}", crate::sandbox::NO_NETWORK_NOTE));
             }
             Ok(truncate(&format!("exit code: {}\n{}", out.status.code().unwrap_or(-1), text.trim_end()), MAX_OUTPUT))
         }
@@ -354,14 +397,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.txt"), "hello\nworld\n").unwrap();
         let ro = PermissionLevel::ReadOnly;
-        let out = execute(dir.path(), ro, "read_file", &json!({"path": "a.txt"})).await.unwrap();
+        let out = execute(dir.path(), ro, false, "read_file", &json!({"path": "a.txt"})).await.unwrap();
         assert!(out.contains("hello") && out.contains("world"));
-        let err = execute(dir.path(), ro, "write_file", &json!({"path": "b.txt", "content": "x"})).await.unwrap_err();
+        let err = execute(dir.path(), ro, false, "write_file", &json!({"path": "b.txt", "content": "x"})).await.unwrap_err();
         assert!(matches!(err, CoreError::Permission(_)));
         assert!(!dir.path().join("b.txt").exists());
-        assert!(execute(dir.path(), ro, "run_command", &json!({"command": "touch c.txt"})).await.is_err());
+        assert!(execute(dir.path(), ro, false, "run_command", &json!({"command": "touch c.txt"})).await.is_err());
         assert!(!dir.path().join("c.txt").exists());
-        let found = execute(dir.path(), ro, "search", &json!({"query": "WORLD"})).await.unwrap();
+        let found = execute(dir.path(), ro, false, "search", &json!({"query": "WORLD"})).await.unwrap();
         assert!(found.contains("a.txt:2"));
     }
 
@@ -369,12 +412,12 @@ mod tests {
     async fn full_agent_writes_edits_and_runs() {
         let dir = tempfile::tempdir().unwrap();
         let full = PermissionLevel::Full;
-        execute(dir.path(), full, "write_file", &json!({"path": "src/x.txt", "content": "one two"})).await.unwrap();
-        execute(dir.path(), full, "edit_file", &json!({"path": "src/x.txt", "old": "two", "new": "three"})).await.unwrap();
+        execute(dir.path(), full, false, "write_file", &json!({"path": "src/x.txt", "content": "one two"})).await.unwrap();
+        execute(dir.path(), full, false, "edit_file", &json!({"path": "src/x.txt", "old": "two", "new": "three"})).await.unwrap();
         assert_eq!(std::fs::read_to_string(dir.path().join("src/x.txt")).unwrap(), "one three");
-        let out = execute(dir.path(), full, "run_command", &json!({"command": "echo hi"})).await.unwrap();
+        let out = execute(dir.path(), full, false, "run_command", &json!({"command": "echo hi"})).await.unwrap();
         assert!(out.contains("exit code: 0") && out.contains("hi"));
-        assert!(execute(dir.path(), full, "write_file", &json!({"path": "../evil.txt", "content": "x"})).await.is_err());
+        assert!(execute(dir.path(), full, false, "write_file", &json!({"path": "../evil.txt", "content": "x"})).await.is_err());
     }
 
     #[test]
