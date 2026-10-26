@@ -22,6 +22,7 @@ use crate::settings::{self, keys};
 use crate::tools;
 use crate::util::{now_ms, truncate};
 
+mod changes;
 mod ctx;
 mod delegate;
 mod git;
@@ -464,6 +465,7 @@ impl Core {
         let started = Instant::now();
         let mut stats = RunStats::default();
         let result = self.run_agent_inner(turn, agent, &task, &mut msg, &mut stats).await;
+        self.finish_checkpoint(&turn.chat.id, &stats, &mut msg).await;
         msg.working_ms = Some(started.elapsed().as_millis() as i64);
         msg.thinking_ms = stats.thinking_ms(started);
         match &result {
@@ -834,6 +836,9 @@ impl Core {
                 } else if call.name == "git" {
                     match (&workspace, has_git) {
                         (Some(ws), true) => {
+                            if changes::mutates_workspace("git", &call.arguments) {
+                                self.checkpoint_before(&turn.chat.id, ws, stats).await;
+                            }
                             let confirmed = call.arguments["confirmed"].as_bool() == Some(true)
                                 && crate::gittool::parse_args(&call.arguments).map(|a| self.take_git_confirmation(&turn.chat.id, &crate::gittool::normalize(&a))).unwrap_or(false);
                             let out = tokio::select! {
@@ -899,6 +904,9 @@ impl Core {
                                 _ => Err(CoreError::Permission("the user denied this action. Do not retry it; ask what they would like instead.".into())),
                             };
                         }
+                    }
+                    if gate.is_ok() && changes::mutates_workspace(&call.name, &call.arguments) {
+                        self.checkpoint_before(&turn.chat.id, ws, stats).await;
                     }
                     match gate {
                         Err(e) => Err(e),
@@ -998,6 +1006,10 @@ struct RunStats {
     tokens_out: i64,
     requests: u32,
     input_chars: usize,
+    /// The workspace snapshot taken before the run's first change, once there was one.
+    checkpoint: Option<changes::RunCheckpoint>,
+    /// Why no snapshot could be taken (git missing, timeout): the run still goes ahead.
+    checkpoint_error: Option<String>,
 }
 
 impl RunStats {

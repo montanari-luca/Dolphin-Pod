@@ -535,3 +535,61 @@ async fn the_shell_policy_is_stored_per_chat_and_rejects_chaining_entries() {
     assert_eq!(p.core.shell_policy(&coding.id).unwrap(), saved);
     assert_eq!(p.core.shell_policy(&chat(&p.core, "General").id).unwrap(), ShellPolicy::default());
 }
+
+fn have_git() -> bool {
+    std::process::Command::new("git").arg("--version").output().is_ok()
+}
+
+#[tokio::test]
+async fn a_run_that_changes_files_can_be_diffed_and_reverted() {
+    if !have_git() {
+        return;
+    }
+    let p = pod(&["rick"], |req| match tool_results(req).len() {
+        0 => vec![call("w1", "write_file", json!({ "path": "notes.txt", "content": "changed\n" }))],
+        1 => vec![call("w2", "write_file", json!({ "path": "docs/new.md", "content": "# new\n" }))],
+        _ => vec![text("done")],
+    });
+    let ws = tempfile::tempdir().unwrap();
+    std::fs::write(ws.path().join("notes.txt"), "original\n").unwrap();
+    let mut c = chat(&p.core, "Coding");
+    c.workspace_path = Some(ws.path().to_string_lossy().into_owned());
+    p.core.update_chat(c.clone()).unwrap();
+    p.core.grant_permission(&c.id, &agent(&p.core, "rick").id, PermissionLevel::Full).unwrap();
+
+    p.core.send_message(&c.id, "@Rick change the notes", vec![]).await.unwrap();
+    wait_for(&p.core, &c.id, done_by(&p.core, "rick")).await;
+    let rick = msgs_of(&p.core, &c.id, "rick").remove(0);
+    let files = rick.meta["changes"]["files"].as_array().expect("the run recorded its changes");
+    let mut names: Vec<&str> = files.iter().map(|f| f["path"].as_str().unwrap()).collect();
+    names.sort();
+    assert_eq!(names, ["docs/new.md", "notes.txt"]);
+    assert_eq!(std::fs::read_to_string(ws.path().join("notes.txt")).unwrap(), "changed\n");
+
+    let patch = p.core.run_diff(&rick.id).await.unwrap();
+    assert!(patch.contains("-original") && patch.contains("+changed") && patch.contains("+# new"), "{patch}");
+
+    let report = p.core.revert_run(&rick.id).await.unwrap();
+    assert_eq!(report.restored.len(), 2);
+    assert_eq!(std::fs::read_to_string(ws.path().join("notes.txt")).unwrap(), "original\n");
+    assert!(!ws.path().join("docs").exists());
+    let after = p.core.list_messages(&c.id, 50).unwrap().into_iter().find(|m| m.id == rick.id).unwrap();
+    assert_eq!(after.meta["changes"]["reverted"], true);
+    assert!(p.core.revert_run(&rick.id).await.is_err(), "a second revert is refused");
+}
+
+#[tokio::test]
+async fn runs_that_change_nothing_record_no_changes() {
+    if !have_git() {
+        return;
+    }
+    // A read-only look around, and a command the user denied: neither takes a snapshot or leaves a changes record.
+    let (p, _ws, coding) = ask_level_pod("echo hi > out.txt");
+    let mut rx = p.core.subscribe();
+    p.core.send_message(&coding.id, "@Rick make the file", vec![]).await.unwrap();
+    let (id, ..) = next_question(&mut rx).await;
+    p.core.answer_question(&id, "Deny", false);
+    wait_for(&p.core, &coding.id, done_by(&p.core, "rick")).await;
+    let rick = &msgs_of(&p.core, &coding.id, "rick")[0];
+    assert!(rick.meta.get("changes").is_none() && rick.meta.get("changesUnavailable").is_none(), "{}", rick.meta);
+}

@@ -4,6 +4,7 @@
 
 pub mod attachments;
 pub mod catalog;
+pub mod checkpoint;
 pub mod context;
 pub mod core;
 pub mod crypto;

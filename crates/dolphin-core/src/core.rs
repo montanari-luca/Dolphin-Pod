@@ -350,6 +350,7 @@ impl Core {
     pub fn delete_chat(&self, id: &str) -> Result<()> {
         self.stop(id);
         self.db.delete_chat(id)?;
+        let _ = std::fs::remove_dir_all(crate::checkpoint::repo_dir(&self.data_dir, id));
         self.emit(CoreEvent::ChatDeleted { chat_id: id.into() });
         Ok(())
     }
