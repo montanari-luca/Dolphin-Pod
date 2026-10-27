@@ -7,7 +7,7 @@ use crate::error::{CoreError, Result};
 
 /// Raw GitHub manifest shared by the desktop apps, the iOS app and the website.
 pub const UPDATE_MANIFEST_URL: &str =
-    "https://raw.githubusercontent.com/AstroDevCompany/MintFlow-Releases/refs/heads/main/dolphinpod.json";
+    "https://raw.githubusercontent.com/montanari-luca/MintFlow-Releases/refs/heads/main/dolphinpod.json";
 
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 

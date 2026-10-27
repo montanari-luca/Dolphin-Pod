@@ -5,8 +5,8 @@ export const SITE = {
   tagline: "Your pod of AI agents, in one chat.",
   description:
     "Dolphin Pod is a Discord-like app where the members are AI agents: Roger moderates, Lincoln orchestrates and a team of specialists answer in shared chats. Local-first, private, on the model you choose.",
-  repo: "https://github.com/AstroDevCompany/Dolphin-Pod",
-  docsEditBase: "https://github.com/AstroDevCompany/Dolphin-Pod/edit/master/docs/",
+  repo: "https://github.com/montanari-luca/Dolphin-Pod",
+  docsEditBase: "https://github.com/montanari-luca/Dolphin-Pod/edit/master/docs/",
 };
 
 export const CREDITS = {
@@ -21,11 +21,15 @@ export const CREDITS = {
 
 /** Same file as UPDATE_MANIFEST_URL in crates/dolphin-core/src/update.rs. */
 export const MANIFEST_URL =
-  "https://raw.githubusercontent.com/AstroDevCompany/MintFlow-Releases/refs/heads/main/dolphinpod.json";
+  "https://raw.githubusercontent.com/montanari-luca/MintFlow-Releases/refs/heads/main/dolphinpod.json";
 
 export const PLATFORMS = [
   { id: "macos", label: "macOS", req: "macOS 11 Big Sur or newer" },
-  { id: "windows", label: "Windows", req: "Windows 10 or newer, 64-bit (uses the Microsoft WebView2 runtime)" },
+  {
+    id: "windows",
+    label: "Windows",
+    req: "Windows 10 or newer, 64-bit (uses the Microsoft WebView2 runtime)",
+  },
   { id: "linux", label: "Linux", req: "64-bit distribution with WebKitGTK 4.1 and a Secret Service keyring" },
   { id: "ios", label: "iOS", req: "iPhone (arrives together with encrypted sync and remote control)" },
 ] as const;
@@ -41,23 +45,119 @@ export const NAV = [
 
 type Agent = { name: string; role: string; job: string; from: string; to: string };
 export const AGENTS: Agent[] = [
-  { name: "Roger", role: "Moderator", job: "Answers general questions, routes every request, checks on stuck agents.", from: "#3d8bfd", to: "#a77bdb" },
-  { name: "Lincoln", role: "Orchestrator", job: "Works behind the scenes: briefs specialists and enforces permissions.", from: "#4f46e5", to: "#0ea5e9" },
-  { name: "Rick", role: "Coding", job: "Writes, refactors and reviews code in any language.", from: "#2563eb", to: "#22d3ee" },
-  { name: "Micheal", role: "Long horizon", job: "Plans and carries out big, multi-step projects end to end.", from: "#7c3aed", to: "#f59e0b" },
-  { name: "Viktor", role: "Security", job: "Threat models, reviews code for vulnerabilities, hardens systems.", from: "#dc2626", to: "#7f1d1d" },
-  { name: "Jordan", role: "Debugging", job: "Reads stack traces and logs, reproduces bugs, finds root causes.", from: "#f97316", to: "#facc15" },
-  { name: "Emma", role: "Creative", job: "Stories, poems, scripts, copy and brainstorming.", from: "#ec4899", to: "#f472b6" },
-  { name: "Ducky", role: "Docs", job: "READMEs, API references, guides and clear explanations of code.", from: "#eab308", to: "#fde047" },
-  { name: "Sarah", role: "Images", job: "A reasoning model writes the prompt, an image model renders it.", from: "#f7826f", to: "#fbb36a" },
-  { name: "Prof", role: "Teaching", job: "Teaches step by step, with examples and checks for understanding.", from: "#10b981", to: "#14b8a6" },
-  { name: "Ruby", role: "Fun facts", job: "Tells surprising, true fun facts whenever you ask.", from: "#e11d48", to: "#fb7185" },
-  { name: "Amelia", role: "Verification", job: "Double-checks other agents' work with evidence, only when you ask.", from: "#0d9488", to: "#2dd4bf" },
-  { name: "Luna", role: "Research", job: "Parallel web searches, source and date checks, then a cited report.", from: "#4338ca", to: "#818cf8" },
-  { name: "Robert", role: "Git", job: "Tracks history and manages commits, push, pull and fetch, usually for the coding agents.", from: "#ea580c", to: "#f59e0b" },
+  {
+    name: "Roger",
+    role: "Moderator",
+    job: "Answers general questions, routes every request, checks on stuck agents.",
+    from: "#3d8bfd",
+    to: "#a77bdb",
+  },
+  {
+    name: "Lincoln",
+    role: "Orchestrator",
+    job: "Works behind the scenes: briefs specialists and enforces permissions.",
+    from: "#4f46e5",
+    to: "#0ea5e9",
+  },
+  {
+    name: "Rick",
+    role: "Coding",
+    job: "Writes, refactors and reviews code in any language.",
+    from: "#2563eb",
+    to: "#22d3ee",
+  },
+  {
+    name: "Micheal",
+    role: "Long horizon",
+    job: "Plans and carries out big, multi-step projects end to end.",
+    from: "#7c3aed",
+    to: "#f59e0b",
+  },
+  {
+    name: "Viktor",
+    role: "Security",
+    job: "Threat models, reviews code for vulnerabilities, hardens systems.",
+    from: "#dc2626",
+    to: "#7f1d1d",
+  },
+  {
+    name: "Jordan",
+    role: "Debugging",
+    job: "Reads stack traces and logs, reproduces bugs, finds root causes.",
+    from: "#f97316",
+    to: "#facc15",
+  },
+  {
+    name: "Emma",
+    role: "Creative",
+    job: "Stories, poems, scripts, copy and brainstorming.",
+    from: "#ec4899",
+    to: "#f472b6",
+  },
+  {
+    name: "Ducky",
+    role: "Docs",
+    job: "READMEs, API references, guides and clear explanations of code.",
+    from: "#eab308",
+    to: "#fde047",
+  },
+  {
+    name: "Sarah",
+    role: "Images",
+    job: "A reasoning model writes the prompt, an image model renders it.",
+    from: "#f7826f",
+    to: "#fbb36a",
+  },
+  {
+    name: "Prof",
+    role: "Teaching",
+    job: "Teaches step by step, with examples and checks for understanding.",
+    from: "#10b981",
+    to: "#14b8a6",
+  },
+  {
+    name: "Ruby",
+    role: "Fun facts",
+    job: "Tells surprising, true fun facts whenever you ask.",
+    from: "#e11d48",
+    to: "#fb7185",
+  },
+  {
+    name: "Amelia",
+    role: "Verification",
+    job: "Double-checks other agents' work with evidence, only when you ask.",
+    from: "#0d9488",
+    to: "#2dd4bf",
+  },
+  {
+    name: "Luna",
+    role: "Research",
+    job: "Parallel web searches, source and date checks, then a cited report.",
+    from: "#4338ca",
+    to: "#818cf8",
+  },
+  {
+    name: "Robert",
+    role: "Git",
+    job: "Tracks history and manages commits, push, pull and fetch, usually for the coding agents.",
+    from: "#ea580c",
+    to: "#f59e0b",
+  },
 ];
 
 export const PROVIDERS = {
   local: ["Ollama", "LM Studio", "OpenAI-compatible"],
-  cloud: ["OpenRouter", "OpenAI", "Anthropic", "Google Gemini", "xAI", "Mistral", "DeepSeek", "Groq", "Together", "Fireworks", "Azure OpenAI"],
+  cloud: [
+    "OpenRouter",
+    "OpenAI",
+    "Anthropic",
+    "Google Gemini",
+    "xAI",
+    "Mistral",
+    "DeepSeek",
+    "Groq",
+    "Together",
+    "Fireworks",
+    "Azure OpenAI",
+  ],
 };
