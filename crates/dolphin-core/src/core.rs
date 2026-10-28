@@ -30,6 +30,7 @@ pub struct Core {
     pub(crate) chat_tokens: Mutex<HashMap<String, CancellationToken>>,
     pending_confirms: Mutex<HashMap<String, oneshot::Sender<bool>>>,
     pending_questions: Mutex<HashMap<String, oneshot::Sender<QuestionAnswer>>>,
+    web_override: Mutex<Option<WebFn>>,
     pub(crate) sync: crate::sync::manager::SyncRuntime,
     pub(crate) remote: crate::remote::RemoteRuntime,
     platform: Mutex<Platform>,
@@ -37,6 +38,8 @@ pub struct Core {
 }
 
 pub type CoreRef = Arc<Core>;
+
+type WebFn = Arc<dyn Fn(&str, &Value) -> Result<String> + Send + Sync>;
 
 /// What the user did with a question an agent asked.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,6 +83,7 @@ impl Core {
             chat_tokens: Mutex::new(HashMap::new()),
             pending_confirms: Mutex::new(HashMap::new()),
             pending_questions: Mutex::new(HashMap::new()),
+            web_override: Mutex::new(None),
             sync: Default::default(),
             remote: Default::default(),
             platform: Mutex::new(Platform::Desktop),
@@ -500,6 +504,21 @@ impl Core {
     }
 
     #[doc(hidden)]
+    /// Replace the web tools with a canned answer (tests have no network).
+    #[doc(hidden)]
+    pub fn override_web(&self, f: impl Fn(&str, &Value) -> Result<String> + Send + Sync + 'static) {
+        *self.web_override.lock().unwrap() = Some(Arc::new(f));
+    }
+
+    /// Run a web tool: the real one, unless a test replaced it.
+    pub(crate) async fn run_web(&self, name: &str, args: &Value) -> Result<String> {
+        let canned = self.web_override.lock().unwrap().clone();
+        match canned {
+            Some(f) => f(name, args),
+            None => crate::tools::execute_web(name, args).await,
+        }
+    }
+
     pub fn override_provider(&self, provider_id: &str, provider: Arc<dyn Provider>) {
         self.providers.set_override(provider_id, provider);
     }

@@ -309,6 +309,7 @@ export function mockBackend(): Backend {
     "chat.paste_threshold": 6000,
     "routing.show_briefs": true,
     "web.access": true,
+    "safety.taint_guard": true,
     "app.onboarded": false,
     "profile.display_name": "You",
   };

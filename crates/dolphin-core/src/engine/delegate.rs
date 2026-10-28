@@ -15,7 +15,7 @@ impl Core {
         level: PermissionLevel,
         delegates: &'a [Agent],
         args: &'a Value,
-    ) -> BoxFuture<'a, Result<String>> {
+    ) -> BoxFuture<'a, Result<(String, bool)>> {
         Box::pin(async move {
             if args.get("_invalid_json").is_some() {
                 return Err(CoreError::invalid("the tool arguments were not valid JSON; send them again"));
@@ -46,7 +46,7 @@ impl Core {
             task.delegated_by = Some(caller.name.clone());
             let m = self.run_agent(turn, target, task).await?;
             match m.status {
-                MessageStatus::Done => Ok(format!("{} replied:\n{}", target.name, truncate(&m.content, 12_000))),
+                MessageStatus::Done => Ok((format!("{} replied:\n{}", target.name, truncate(&m.content, 12_000)), m.meta["readWeb"].as_bool() == Some(true))),
                 MessageStatus::Cancelled => Err(CoreError::Cancelled),
                 _ => Err(CoreError::invalid(format!("{} could not do it: {}", target.name, m.error.unwrap_or_else(|| "unknown error".into())))),
             }

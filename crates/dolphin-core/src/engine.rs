@@ -26,6 +26,7 @@ mod changes;
 mod ctx;
 mod delegate;
 mod git;
+mod guard;
 
 const MAX_TOOL_STEPS: usize = 40;
 /// How often one run may recover from a provider rejecting the prompt as too long.
@@ -611,6 +612,9 @@ impl Core {
         let mut finished = false;
         // "Allow file changes for this run": file writes and edits stop asking until the run ends.
         let mut edits_approved = false;
+        // Set once the run has read web content: from then on changes need the user's approval (see settings TAINT_GUARD).
+        let taint_guard = settings::get_bool(&self.db, keys::TAINT_GUARD);
+        let mut tainted = false;
 
         for _step in 0..MAX_TOOL_STEPS {
             self.fit_context(turn, agent, &mut rc, &mut req, &mut run_start, volatile, summarizer.as_ref(), false).await?;
@@ -760,7 +764,7 @@ impl Core {
                 self.activity(&turn.chat.id, &agent.id, AgentActivity::UsingTool, Some(format!("Running {} web lookups at once", web_idx.len())));
                 let batch: Vec<(&str, &Value)> = web_idx.iter().map(|i| (calls[*i].name.as_str(), &calls[*i].arguments)).collect();
                 let results = tokio::select! {
-                    r = tools::execute_web_all(&batch) => r,
+                    r = futures::future::join_all(batch.iter().map(|(n, a)| self.run_web(n, a))) => r,
                     _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
                 };
                 web_results.extend(web_idx.iter().copied().zip(results));
@@ -778,7 +782,7 @@ impl Core {
                 if call.name == RETRIEVE_TOOL {
                     // Served from memory: no workspace, no permission, nothing to log.
                     self.activity(&turn.chat.id, &agent.id, AgentActivity::UsingTool, Some(tools::summarize(&call.name, &call.arguments)));
-                    req.messages.push(ChatMessage::tool_result(call, rc.store.retrieve(&call.arguments)));
+                    req.messages.push(ChatMessage::tool_result(call, tools::untrusted("an earlier tool result", &rc.store.retrieve(&call.arguments))));
                     continue;
                 }
                 let level = match task.level_override {
@@ -786,6 +790,8 @@ impl Core {
                     None => self.db.grant(&turn.chat.id, &agent.id)?.level,
                 };
                 let summary = tools::summarize(&call.name, &call.arguments);
+                // Text the app itself wrote (a git confirmation request) is an instruction to the agent, not data.
+                let mut app_text = false;
                 let result = if call.name == "generate_image" {
                     generated_image = true;
                     tokio::select! {
@@ -809,10 +815,15 @@ impl Core {
                             p = self.providers.semaphore(&cfg).acquire_owned() => p.map_err(|_| CoreError::Cancelled)?,
                             _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
                         });
-                        if matches!(r, Err(CoreError::Cancelled)) {
-                            return Err(CoreError::Cancelled);
+                        match r {
+                            Err(CoreError::Cancelled) => return Err(CoreError::Cancelled),
+                            // What a colleague read on the web taints the work they hand back.
+                            Ok((text, delegate_tainted)) => {
+                                tainted |= delegate_tainted;
+                                Ok(text)
+                            }
+                            Err(e) => Err(e),
                         }
-                        r
                     }
                 } else if call.name == tools::ASK_TOOL {
                     match tools::parse_question(&call.arguments) {
@@ -836,25 +847,39 @@ impl Core {
                 } else if call.name == "git" {
                     match (&workspace, has_git) {
                         (Some(ws), true) => {
-                            if changes::mutates_workspace("git", &call.arguments) {
-                                self.checkpoint_before(&turn.chat.id, ws, stats).await;
-                            }
-                            let confirmed = call.arguments["confirmed"].as_bool() == Some(true)
-                                && crate::gittool::parse_args(&call.arguments).map(|a| self.take_git_confirmation(&turn.chat.id, &crate::gittool::normalize(&a))).unwrap_or(false);
-                            let out = tokio::select! {
-                                r = crate::gittool::execute(std::path::Path::new(ws), level, &call.arguments, confirmed) => r,
-                                _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
+                            let mutating = changes::mutates_workspace("git", &call.arguments);
+                            // After reading the web, a git write needs the user's approval even at full permissions.
+                            let gate = if mutating && taint_guard && tainted && level == PermissionLevel::Full {
+                                let command = crate::gittool::parse_args(&call.arguments).map(|a| crate::gittool::normalize(&a)).unwrap_or_default();
+                                self.approve_once(turn, agent, &cfg, &mut _permit, can_ask, &format!("{} (has read web content) wants to run git {}", agent.name, truncate(&command, 300))).await?
+                            } else {
+                                Ok(())
                             };
-                            out.map(|o| {
-                                if let Some(p) = o.pending {
-                                    match msg.meta["gitPending"].as_array_mut() {
-                                        Some(list) if list.iter().any(|c| c.as_str() == Some(&p)) => {}
-                                        Some(list) => list.push(json!(p)),
-                                        None => msg.meta["gitPending"] = json!([p]),
+                            match gate {
+                                Err(e) => Err(e),
+                                Ok(()) => {
+                                    if mutating {
+                                        self.checkpoint_before(&turn.chat.id, ws, stats).await;
                                     }
+                                    let confirmed = call.arguments["confirmed"].as_bool() == Some(true)
+                                        && crate::gittool::parse_args(&call.arguments).map(|a| self.take_git_confirmation(&turn.chat.id, &crate::gittool::normalize(&a))).unwrap_or(false);
+                                    let out = tokio::select! {
+                                        r = crate::gittool::execute(std::path::Path::new(ws), level, &call.arguments, confirmed) => r,
+                                        _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
+                                    };
+                                    out.map(|o| {
+                                        app_text = o.pending.is_some();
+                                        if let Some(p) = o.pending {
+                                            match msg.meta["gitPending"].as_array_mut() {
+                                                Some(list) if list.iter().any(|c| c.as_str() == Some(&p)) => {}
+                                                Some(list) => list.push(json!(p)),
+                                                None => msg.meta["gitPending"] = json!([p]),
+                                            }
+                                        }
+                                        o.text
+                                    })
                                 }
-                                o.text
-                            })
+                            }
                         }
                         _ => Err(CoreError::invalid("unknown tool 'git'")),
                     }
@@ -862,39 +887,36 @@ impl Core {
                     done
                 } else if tools::is_web_tool(&call.name) {
                     tokio::select! {
-                        r = tools::execute_web(&call.name, &call.arguments) => r,
+                        r = self.run_web(&call.name, &call.arguments) => r,
                         _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
                     }
                 } else if let Some(ws) = &workspace {
                     let policy = self.db.shell_policy(&turn.chat.id)?;
-                    // At the Ask level a write or command waits for the user, unless they already allowed it.
+                    // At the Ask level a write or command waits for the user, unless they already allowed it. After reading
+                    // the web the same goes for Full, and nothing counts as already allowed.
+                    let guarded = taint_guard && tainted;
                     let mut gate: Result<()> = Ok(());
-                    let pre_approved = match call.name.as_str() {
-                        "run_command" => permissions::command_allowed(call.arguments["command"].as_str().unwrap_or(""), &policy.allow_commands),
-                        _ => edits_approved,
-                    };
-                    if permissions::needs_approval(level, &call.name) && !pre_approved {
+                    let pre_approved = !guarded
+                        && match call.name.as_str() {
+                            "run_command" => permissions::command_allowed(call.arguments["command"].as_str().unwrap_or(""), &policy.allow_commands),
+                            _ => edits_approved,
+                        };
+                    if permissions::needs_approval(level, &call.name, guarded) && !pre_approved {
                         if !can_ask {
                             gate = Err(CoreError::Permission(format!(
-                                "{} needs the user's approval, and nobody can answer here (automations, delegated and remote runs cannot ask). Do not retry it.",
-                                tools::summarize(&call.name, &call.arguments)
+                                "{} needs the user's approval{}, and nobody can answer here (automations, delegated and remote runs cannot ask). Do not retry it.",
+                                tools::summarize(&call.name, &call.arguments),
+                                if guarded { " because this run has read web content" } else { "" }
                             )));
                         } else {
-                            let (question, options, prefix) = tools::approval_question(&agent.name, &call.name, &call.arguments);
-                            self.activity(&turn.chat.id, &agent.id, AgentActivity::UsingTool, Some("Waiting for your approval".into()));
-                            _permit = None;
-                            let answer = self.ask(&turn.chat.id, &agent.id, &question, options, &turn.token).await;
-                            _permit = Some(tokio::select! {
-                                p = self.providers.semaphore(&cfg).acquire_owned() => p.map_err(|_| CoreError::Cancelled)?,
-                                _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
-                            });
-                            gate = match answer? {
+                            let (question, options, prefix) = tools::approval_question(&agent.name, &call.name, &call.arguments, guarded);
+                            gate = match self.ask_releasing(turn, agent, &cfg, &mut _permit, &question, options).await? {
                                 QuestionAnswer::Choice(c) if c == tools::APPROVE_ONCE => Ok(()),
-                                QuestionAnswer::Choice(c) if c == tools::APPROVE_RUN => {
+                                QuestionAnswer::Choice(c) if c == tools::APPROVE_RUN && !guarded => {
                                     edits_approved = true;
                                     Ok(())
                                 }
-                                QuestionAnswer::Choice(c) if c.starts_with(tools::APPROVE_ALWAYS) && prefix.is_some() => {
+                                QuestionAnswer::Choice(c) if c.starts_with(tools::APPROVE_ALWAYS) && !guarded && prefix.is_some() => {
                                     let mut p = policy.clone();
                                     p.allow_commands.extend(prefix.filter(|x| !p.allow_commands.contains(x)));
                                     self.db.set_shell_policy(&turn.chat.id, &p)?;
@@ -930,7 +952,12 @@ impl Core {
                     list.push(json!({ "name": call.name, "summary": summary, "ok": ok, "allowed": allowed, "error": (!ok).then(|| truncate(&output, 300)), "answer": answer }));
                 }
                 self.save_message(msg)?;
+                if ok && tools::is_web_tool(&call.name) {
+                    tainted = true;
+                    msg.meta["readWeb"] = json!(true);
+                }
                 let output = if ok { rc.shrink_tool_output(&call.name, output) } else { output };
+                let output = if ok && !app_text && tools::is_untrusted_tool(&call.name) { tools::untrusted(&summary, &output) } else { output };
                 req.messages.push(ChatMessage::tool_result(call, output));
             }
         }

@@ -88,6 +88,9 @@ export function GeneralPage() {
         <Row title="Web access" description="Let agents search the web and open public pages for current information. OpenRouter models use OpenRouter's search; all others use a built-in key-less search. Search terms and page requests leave your computer.">
           <BoolSetting k="web.access" />
         </Row>
+        <Row title="Ask before acting after reading the web" description="Once an agent has read a web page or search result in a run, every file change, command and git write in that run waits for your approval, even with full permissions, and automations refuse them. A page can hide instructions aimed at the agent; this keeps it from acting on them unseen.">
+          <BoolSetting k="safety.taint_guard" />
+        </Row>
         <Row title="Show orchestration details" description="Show Lincoln's brief and the routing decision on messages.">
           <BoolSetting k="routing.show_briefs" />
         </Row>

@@ -97,6 +97,7 @@ pub mod keys {
     pub const PASTE_THRESHOLD: &str = "chat.paste_threshold";
     pub const SHOW_BRIEFS: &str = "routing.show_briefs";
     pub const WEB_ACCESS: &str = "web.access";
+    pub const TAINT_GUARD: &str = "safety.taint_guard";
     pub const ONBOARDED: &str = "app.onboarded";
     pub const DISPLAY_NAME: &str = "profile.display_name";
 
@@ -145,6 +146,7 @@ pub fn registry() -> Vec<SettingDef> {
             Int { min: 500, max: 200_000 }, json!(6000)),
         def(keys::SHOW_BRIEFS, "Show orchestration briefs", "Show Lincoln's brief and the routing decision on agent messages.", Global, Bool, json!(true)),
         def(keys::WEB_ACCESS, "Web access for agents", "Let agents search the web and open public pages to answer with current information.", Global, Bool, json!(true)),
+        def(keys::TAINT_GUARD, "Ask before acting after reading the web", "Once an agent has read a web page or search result in a run, every file change, command and git write in that run waits for your approval, even with full permissions, and automations refuse them. A page can hide instructions aimed at the agent; this keeps it from acting on them unseen.", Global, Bool, json!(true)).sensitive(),
         def(keys::ONBOARDED, "Onboarding finished", "Internal.", Global, Bool, json!(false)),
         def(keys::DISPLAY_NAME, "Your name", "How you appear in chats. Agents address you by it.", Global, Text { max_len: 32 }, json!("You")),
 

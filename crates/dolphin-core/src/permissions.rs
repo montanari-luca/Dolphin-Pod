@@ -113,9 +113,10 @@ pub fn check_workspace(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Whether `granted` has to wait for the user's approval before `tool` runs.
-pub fn needs_approval(granted: PermissionLevel, tool: &str) -> bool {
-    granted == PermissionLevel::Ask && required_level(tool) == PermissionLevel::Ask
+/// Whether `granted` has to wait for the user's approval before `tool` runs. A tainted run (one that has read web
+/// content) asks even at the Full level.
+pub fn needs_approval(granted: PermissionLevel, tool: &str, tainted: bool) -> bool {
+    required_level(tool) == PermissionLevel::Ask && (granted == PermissionLevel::Ask || (tainted && granted == PermissionLevel::Full))
 }
 
 /// A command the user pre-approved: it must start with an allowed prefix, word for word, and be a single plain
@@ -159,10 +160,14 @@ mod tests {
     fn ask_level_reaches_write_tools_but_waits_for_approval() {
         assert!(check(PermissionLevel::Ask, "write_file").is_ok());
         assert!(check(PermissionLevel::Ask, "run_command").is_ok());
-        assert!(needs_approval(PermissionLevel::Ask, "run_command"));
-        assert!(!needs_approval(PermissionLevel::Ask, "read_file"));
-        assert!(!needs_approval(PermissionLevel::Full, "run_command"));
-        assert!(!needs_approval(PermissionLevel::ReadOnly, "run_command"));
+        assert!(needs_approval(PermissionLevel::Ask, "run_command", false));
+        assert!(!needs_approval(PermissionLevel::Ask, "read_file", false));
+        assert!(!needs_approval(PermissionLevel::Full, "run_command", false));
+        assert!(!needs_approval(PermissionLevel::ReadOnly, "run_command", false));
+        // After reading the web, Full asks too (reads still don't).
+        assert!(needs_approval(PermissionLevel::Full, "run_command", true));
+        assert!(needs_approval(PermissionLevel::Full, "write_file", true));
+        assert!(!needs_approval(PermissionLevel::Full, "read_file", true));
     }
 
     #[test]

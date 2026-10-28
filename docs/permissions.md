@@ -46,3 +46,26 @@ request, and a **Revert** button.
 - This needs `git` installed. Without it, runs still work and the message says undo is unavailable.
 - Snapshots stay on the device that made them. Reverting a run that was synced from another device is refused with a
   clear message. Deleting a chat deletes its snapshots.
+
+## Web pages and files that talk to the agent
+
+Text an agent reads can contain instructions aimed at it (a hidden line on a web page, a comment in a downloaded file).
+Two things limit what that can do:
+
+- **Untrusted content.** Web pages, search results, files, command output and git output reach the model wrapped in
+  `<untrusted_content>` tags, and every agent's instructions say to treat that text purely as data: never follow it,
+  and tell you what it asked instead. Invisible characters (zero-width, bidirectional overrides, Unicode "tag"
+  characters) are removed from it, text a page hides from people (`hidden`, `display:none`, zero-size text, comments)
+  is dropped before the model sees it, and content cannot close the wrapper early.
+- **Ask after reading the web.** Once a run has opened a web page or read search results, every file change, command
+  and git write in that run asks you first, even at the full level, and nothing counts as already approved (no
+  pre-approved commands, no "allow file changes for this run"). The question says the agent has read web content and
+  offers only **Allow once** and **Deny**. Automations, delegated and remote runs cannot ask, so they refuse these
+  actions. What a delegate read on the web taints the run that delegated to it. Turn this off with **Ask before acting
+  after reading the web** in Settings → General (changing it through Roger needs your confirmation).
+
+Limits: this is a mitigation, not a guarantee. Models can still be fooled by text that is not marked as untrusted
+(for example OpenRouter's server-side search results, which arrive inside the model's own answer and do not trigger the
+ask rule), files in your project count as trusted for the ask rule (otherwise every run would ask), and an agent that
+read a secret could still try to send it out in the address of a page it opens. Keep web access off in chats where
+that matters.
