@@ -16,6 +16,8 @@ type Meta = {
   routing?: { status?: string; mode?: string; intent?: string; targets?: string[]; source?: string; needsSetup?: boolean; error?: string | null; via?: string; brief?: string; rewrite?: string };
   tools?: { name: string; summary: string; ok: boolean; allowed: boolean; error?: string | null }[];
   plan?: { approved?: boolean };
+  /** DP Council: its critique ("critic", with the agent it reviews) or the plan draft it reviewed ("draft"). */
+  council?: { role: "critic" | "draft"; for?: string };
   changes?: { before: string; after: string; files: FileChange[]; reverted: boolean; revert?: RevertReport };
   changesUnavailable?: string;
   needsSetup?: boolean;
@@ -57,7 +59,9 @@ export const MessageItem = memo(function MessageItem({ message, agent, grouped }
                 <span className="cursor-default"><UserNameText className="text-[14px]" /></span>
               </UserHoverCard>
             ) : agent && <AgentName agent={agent} className="text-[14px]" />}
-            {!isUser && meta.routing?.mode && meta.routing.mode !== "answer" && <Badge tone={meta.routing.mode === "plan" ? "warning" : "accent"}>{MODE_LABEL[meta.routing.mode] ?? meta.routing.mode}</Badge>}
+            {!isUser && !meta.council?.for && meta.routing?.mode && meta.routing.mode !== "answer" && <Badge tone={meta.routing.mode === "plan" ? "warning" : "accent"}>{MODE_LABEL[meta.routing.mode] ?? meta.routing.mode}</Badge>}
+            {meta.council?.role === "critic" && <Badge tone="accent">{meta.council.for ? `reviewing for ${meta.council.for}` : "review"}</Badge>}
+            {meta.council?.role === "draft" && <Badge>draft</Badge>}
             {meta.routing?.via === "mention" && <Badge>direct</Badge>}
             <span className="text-[11px] text-faint tabular-nums">{formatTime(message.createdAt)}</span>
             {isUser && meta.remote && <Badge tone="accent">{meta.remoteDevice ? `via ${meta.remoteDevice}` : meta.remoteTarget ? `sent to ${meta.remoteTarget}` : "remote"}</Badge>}

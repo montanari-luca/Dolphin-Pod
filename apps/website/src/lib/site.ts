@@ -143,6 +143,13 @@ export const AGENTS: Agent[] = [
     from: "#ea580c",
     to: "#f59e0b",
   },
+  {
+    name: "DP Council",
+    role: "Council",
+    job: "The strongest model in the pod criticizes big tasks once before the work starts, then steps out.",
+    from: "#facc15",
+    to: "#a16207",
+  },
 ];
 
 export const PROVIDERS = {

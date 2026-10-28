@@ -148,6 +148,14 @@ const SEED: [string, string, Agent["role"], string, string, AgentColor][] = [
     "Git manager. Tracks history and handles status, commit, push, pull and fetch, usually on behalf of the coding agents.",
     g("#ea580c", "#f59e0b"),
   ],
+  [
+    "council",
+    "DP Council",
+    "specialist",
+    "council",
+    "Council. Runs on the strongest model in the pod and criticizes the other agents' approach once, before they work on big tasks (or on their draft, for plans). Then it steps out.",
+    g("#facc15", "#a16207"),
+  ],
 ];
 
 const KINDS: ProviderKindInfo[] = (
@@ -227,14 +235,14 @@ export function mockBackend(): Backend {
     imageModel: null,
     iosModel: null,
     persona: null,
-    learning: true,
+    learning: specialty !== "council",
     sort: i,
     updatedAt: now(),
   }));
   const id = (slug: string) => `a-${slug}`;
   const memories: AgentMemory[] = [];
   const chats: Chat[] = [
-    ["Coding", "code", ["rick", "jordan", "ducky", "viktor", "prof", "robert", "amelia"]],
+    ["Coding", "code", ["rick", "jordan", "ducky", "viktor", "prof", "robert", "amelia", "council"]],
     [
       "General",
       "message-circle",
@@ -251,9 +259,10 @@ export function mockBackend(): Backend {
         "amelia",
         "luna",
         "robert",
+        "council",
       ],
     ],
-    ["Long Horizon Agentic", "rocket", ["micheal", "rick", "jordan", "robert", "amelia", "luna"]],
+    ["Long Horizon Agentic", "rocket", ["micheal", "rick", "jordan", "robert", "amelia", "luna", "council"]],
     ["Learning", "graduation-cap", ["prof", "ducky", "ruby", "luna"]],
     ["Creative", "palette", ["emma", "sarah", "ruby"]],
   ].map(([name, icon, slugs], i) => ({
@@ -313,6 +322,7 @@ export function mockBackend(): Backend {
     "context.local_window": 32768,
     "chat.paste_threshold": 6000,
     "routing.show_briefs": true,
+    "council.enabled": true,
     "web.access": true,
     "safety.taint_guard": true,
     "app.onboarded": false,

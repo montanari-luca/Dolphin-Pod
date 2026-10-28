@@ -91,6 +91,9 @@ export function GeneralPage() {
         <Row title="Ask before acting after reading the web" description="Once an agent has read a web page or search result in a run, every file change, command and git write in that run waits for your approval, even with full permissions, and automations refuse them. A page can hide instructions aimed at the agent; this keeps it from acting on them unseen.">
           <BoolSetting k="safety.taint_guard" />
         </Row>
+        <Row title="DP Council reviews big tasks" description="Before a coding, agentic, documentation or research agent starts a big task (or after its draft, for plans), DP Council criticizes the approach once on the strongest model. Pick its model in Agents. Turn this off to save time and tokens.">
+          <BoolSetting k="council.enabled" />
+        </Row>
         <Row title="Show orchestration details" description="Show Lincoln's brief and the routing decision on messages.">
           <BoolSetting k="routing.show_briefs" />
         </Row>

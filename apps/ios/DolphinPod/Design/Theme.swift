@@ -87,6 +87,7 @@ enum Icons {
         case "verifier": return "checkmark.seal.fill"
         case "researcher": return "binoculars.fill"
         case "git": return "arrow.triangle.branch"
+        case "council": return "scalemass.fill"
         default: return "sparkles"
         }
     }
