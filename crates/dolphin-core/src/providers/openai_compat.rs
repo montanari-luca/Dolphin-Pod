@@ -349,6 +349,18 @@ impl Provider for OpenAiCompat {
         Ok(out)
     }
 
+    async fn embed(&self, model: &str, inputs: &[String]) -> Result<Vec<Vec<f32>>> {
+        let url = format!("{}/embeddings", self.base);
+        let resp = send_with_retry(self.authed(self.http.post(url).json(&json!({ "model": model, "input": inputs })))).await.map_err(|e| match e {
+            CoreError::Provider(m) if m.contains("could not connect") && self.kind.is_local() => {
+                CoreError::provider(format!("{} is not reachable at {} ({m})", self.kind.label(), self.base))
+            }
+            other => other,
+        })?;
+        let v: Value = resp.json().await.map_err(|e| CoreError::provider(format!("unreadable embeddings answer: {e}")))?;
+        super::parse_openai_embeddings(&v, inputs.len())
+    }
+
     async fn stream_chat(&self, req: ChatRequest) -> Result<EventStream> {
         let body = build_body(self.kind, &req);
         let url = format!("{}/chat/completions", self.base);

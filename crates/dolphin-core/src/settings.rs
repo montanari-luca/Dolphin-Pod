@@ -98,6 +98,7 @@ pub mod keys {
     pub const SHOW_BRIEFS: &str = "routing.show_briefs";
     pub const COUNCIL_ENABLED: &str = "council.enabled";
     pub const LEARNING_REFLECT: &str = "learning.reflect";
+    pub const EMBEDDING_MODEL: &str = "memory.embedding_model";
     pub const WEB_ACCESS: &str = "web.access";
     pub const TAINT_GUARD: &str = "safety.taint_guard";
     pub const ONBOARDED: &str = "app.onboarded";
@@ -159,6 +160,7 @@ pub fn registry() -> Vec<SettingDef> {
         def(keys::PASTE_THRESHOLD, "Long paste threshold (characters)", "Pasted text longer than this becomes a .txt attachment.", Global,
             Int { min: 500, max: 200_000 }, json!(6000)),
         def(keys::SHOW_BRIEFS, "Show orchestration briefs", "Show Lincoln's brief and the routing decision on agent messages.", Global, Bool, json!(true)),
+        def(keys::EMBEDDING_MODEL, "Embedding model", "Optional. When an agent has many notes, picks the ones that mean something related to your request instead of the ones that share words with it. Needs an embeddings-capable model on Ollama, LM Studio, OpenRouter or another OpenAI-compatible server. If it fails, word matching is used.", Global, Model, Value::Null).nullable(),
         def(keys::LEARNING_REFLECT, "Learn from finished conversations", "When a chat has been quiet for a while, the agents that took part look back over it (through your utility model) for lasting preferences you showed without ever correcting them. Off by default: it sends a short transcript of the conversation to that model.", Global, Bool, json!(false)),
         def(keys::COUNCIL_ENABLED, "DP Council reviews big tasks", "Before a coding, agentic, documentation or research agent starts a big task (or after its draft, for plans), DP Council criticizes the approach once on the strongest model. Turn it off to save time and tokens.", Global, Bool, json!(true)),
         def(keys::WEB_ACCESS, "Web access for agents", "Let agents search the web and open public pages to answer with current information.", Global, Bool, json!(true)),

@@ -56,7 +56,7 @@ const CORRECTION_PHRASES: &[&str] = &[
 const NO_IS_FINE_BEFORE: &[&str] = &["problem", "problems", "worries", "thanks", "thank", "idea", "need", "rush", "hurry", "questions", "more"];
 
 /// The message without leading @mentions and punctuation, so "@Rick no, use tabs" is judged on "no, use tabs".
-fn without_leading_mentions(text: &str) -> &str {
+pub(crate) fn without_leading_mentions(text: &str) -> &str {
     let mut rest = text.trim();
     while let Some(after) = rest.strip_prefix('@') {
         rest = after.trim_start_matches(|c: char| c.is_alphanumeric() || c == '_' || c == '-').trim_start_matches([',', ':', ' ']);

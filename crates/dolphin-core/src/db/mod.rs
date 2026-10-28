@@ -2,6 +2,7 @@
 
 mod agents;
 mod chats;
+mod embeddings;
 mod feedback;
 mod memory;
 mod messages;
@@ -33,6 +34,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migration_0008_feedback_learning.sql"),
     include_str!("migration_0009_persona_proposals.sql"),
     include_str!("migration_0010_memory_share.sql"),
+    include_str!("migration_0011_memory_embeddings.sql"),
 ];
 
 #[derive(Clone)]

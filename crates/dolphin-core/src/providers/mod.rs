@@ -152,6 +152,42 @@ pub trait Provider: Send + Sync {
     /// Models with reasoning/effort/vision capabilities resolved as far as the provider exposes them.
     async fn list_models(&self) -> Result<Vec<ModelInfo>>;
     async fn stream_chat(&self, req: ChatRequest) -> Result<EventStream>;
+    /// Turn texts into vectors (one per input, all the same length) so they can be compared for relevance.
+    /// Only providers that offer an embeddings endpoint can; the rest say so and callers fall back.
+    async fn embed(&self, _model: &str, _inputs: &[String]) -> Result<Vec<Vec<f32>>> {
+        Err(CoreError::provider("this provider does not offer embeddings"))
+    }
+}
+
+/// The vectors in a provider's answer, checked: as many as texts were sent, none empty, all the same length.
+pub(crate) fn checked_vectors(vectors: Vec<Vec<f32>>, expected: usize) -> Result<Vec<Vec<f32>>> {
+    let width = vectors.first().map(Vec::len).unwrap_or(0);
+    if vectors.len() != expected || width == 0 || vectors.iter().any(|v| v.len() != width) {
+        return Err(CoreError::provider(format!("the embeddings answer was not {expected} vectors of one size")));
+    }
+    Ok(vectors)
+}
+
+fn floats(v: &serde_json::Value) -> Option<Vec<f32>> {
+    v.as_array()?.iter().map(|n| n.as_f64().map(|f| f as f32)).collect()
+}
+
+/// Ollama's `/api/embed` answer: `{"embeddings": [[...], ...]}`.
+pub(crate) fn parse_ollama_embeddings(v: &serde_json::Value, expected: usize) -> Result<Vec<Vec<f32>>> {
+    let list = v.get("embeddings").and_then(|e| e.as_array()).ok_or_else(|| CoreError::provider("no embeddings in the answer"))?;
+    checked_vectors(list.iter().filter_map(floats).collect(), expected)
+}
+
+/// The OpenAI-style `/embeddings` answer: `{"data": [{"index": 0, "embedding": [...]}, ...]}`, put back in input order.
+pub(crate) fn parse_openai_embeddings(v: &serde_json::Value, expected: usize) -> Result<Vec<Vec<f32>>> {
+    let data = v.get("data").and_then(|d| d.as_array()).ok_or_else(|| CoreError::provider("no embeddings in the answer"))?;
+    let mut rows: Vec<(u64, Vec<f32>)> = data
+        .iter()
+        .enumerate()
+        .filter_map(|(i, d)| Some((d.get("index").and_then(|n| n.as_u64()).unwrap_or(i as u64), floats(d.get("embedding")?)?)))
+        .collect();
+    rows.sort_by_key(|(i, _)| *i);
+    checked_vectors(rows.into_iter().map(|(_, v)| v).collect(), expected)
 }
 
 // ------------------------------------------------------------------ shared HTTP plumbing
@@ -301,4 +337,48 @@ pub async fn complete(provider: &dyn Provider, req: ChatRequest) -> Result<(Stri
         }
     }
     Ok((text, usage))
+}
+
+#[cfg(test)]
+mod embedding_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn ollama_answers_are_read_and_checked() {
+        let ok = json!({"model": "m", "embeddings": [[0.1, 0.2], [0.3, 0.4]]});
+        assert_eq!(parse_ollama_embeddings(&ok, 2).unwrap(), vec![vec![0.1, 0.2], vec![0.3, 0.4]]);
+        assert!(parse_ollama_embeddings(&ok, 3).is_err(), "a missing vector is an error");
+        assert!(parse_ollama_embeddings(&json!({"embeddings": [[0.1, 0.2], [0.3]]}), 2).is_err(), "sizes must agree");
+        assert!(parse_ollama_embeddings(&json!({"embeddings": [[]]}), 1).is_err(), "an empty vector is no vector");
+        assert!(parse_ollama_embeddings(&json!({"error": "model not found"}), 1).is_err());
+    }
+
+    #[test]
+    fn openai_answers_are_put_back_in_input_order() {
+        let shuffled = json!({"data": [{"index": 1, "embedding": [0.3, 0.4]}, {"index": 0, "embedding": [0.1, 0.2]}]});
+        assert_eq!(parse_openai_embeddings(&shuffled, 2).unwrap(), vec![vec![0.1, 0.2], vec![0.3, 0.4]]);
+        let no_index = json!({"data": [{"embedding": [1.0]}, {"embedding": [2.0]}]});
+        assert_eq!(parse_openai_embeddings(&no_index, 2).unwrap(), vec![vec![1.0], vec![2.0]]);
+        assert!(parse_openai_embeddings(&json!({"data": "nope"}), 1).is_err());
+    }
+
+    #[test]
+    fn a_provider_without_embeddings_says_so() {
+        struct Plain;
+        #[async_trait]
+        impl Provider for Plain {
+            fn kind(&self) -> ProviderKind {
+                ProviderKind::Ollama
+            }
+            async fn list_models(&self) -> Result<Vec<ModelInfo>> {
+                Ok(vec![])
+            }
+            async fn stream_chat(&self, _req: ChatRequest) -> Result<EventStream> {
+                Err(CoreError::provider("unused"))
+            }
+        }
+        let err = tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(Plain.embed("m", &["x".into()])).unwrap_err();
+        assert!(err.to_string().contains("does not offer embeddings"));
+    }
 }

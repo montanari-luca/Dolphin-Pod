@@ -178,6 +178,17 @@ impl Provider for Ollama {
         Ok(out)
     }
 
+    async fn embed(&self, model: &str, inputs: &[String]) -> Result<Vec<Vec<f32>>> {
+        let resp = send_with_retry(self.http.post(format!("{}/api/embed", self.base)).json(&json!({ "model": model, "input": inputs })))
+            .await
+            .map_err(|e| match e {
+                CoreError::Provider(m) if m.contains("could not connect") => CoreError::provider(format!("Ollama is not running at {} ({m})", self.base)),
+                other => other,
+            })?;
+        let v: Value = resp.json().await.map_err(|e| CoreError::provider(format!("unreadable embeddings answer: {e}")))?;
+        super::parse_ollama_embeddings(&v, inputs.len())
+    }
+
     async fn stream_chat(&self, req: ChatRequest) -> Result<EventStream> {
         let body = build_body(&req);
         let resp = send_with_retry(self.http.post(format!("{}/api/chat", self.base)).json(&body))
@@ -256,5 +267,38 @@ mod tests {
         assert_eq!(b["options"]["num_predict"], 512);
         assert_eq!(b["keep_alive"], "30m");
         assert!(build_body(&ChatRequest::default()).get("options").is_none());
+    }
+}
+
+#[cfg(test)]
+mod live {
+    use super::*;
+
+    /// Against a real local Ollama (not run by default):
+    ///
+    ///     cargo test -p dolphin-core live_embed -- --ignored --nocapture
+    ///     DOLPHIN_TEST_EMBED_MODEL=nomic-embed-text cargo test -p dolphin-core live_embed -- --ignored --nocapture
+    ///
+    /// With an embedding model it checks the vectors and that a related sentence is closer than an unrelated one. Without
+    /// one it checks that a chat model is refused with a message a user can act on.
+    #[tokio::test]
+    #[ignore = "needs a running Ollama"]
+    async fn live_embed() {
+        let ollama = Ollama::new("http://localhost:11434".into());
+        let texts = ["why is my sql slow".to_string(), "The database is PostgreSQL".to_string(), "Owns a cat called Miso".to_string()];
+        match std::env::var("DOLPHIN_TEST_EMBED_MODEL") {
+            Ok(model) => {
+                let v = ollama.embed(&model, &texts).await.expect("the embedding model answers");
+                assert_eq!(v.len(), 3);
+                let (related, unrelated) = (crate::memory::embed::cosine(&v[0], &v[1]).unwrap(), crate::memory::embed::cosine(&v[0], &v[2]).unwrap());
+                println!("{model}: vectors of {}, sql~postgresql {related:.3}, sql~cat {unrelated:.3}", v[0].len());
+                assert!(related > unrelated, "a related note should be closer than an unrelated one");
+            }
+            Err(_) => {
+                let err = ollama.embed("qwen3.5:0.8b", &texts).await.expect_err("a chat model cannot embed");
+                println!("refused with: {err}");
+                assert!(err.to_string().contains("does not support embeddings"), "{err}");
+            }
+        }
     }
 }

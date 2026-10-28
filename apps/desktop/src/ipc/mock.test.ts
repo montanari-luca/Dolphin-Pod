@@ -69,4 +69,11 @@ describe("mock agent memory", () => {
     await expect(api.acceptPersonaProposal(dismissed.id)).rejects.toMatch(/not found/);
     expect(events.filter((e) => e.type === "personaProposalChanged")).toHaveLength(4);
   });
+
+  it("tests the embedding model only once one is chosen", async () => {
+    const api = mockBackend();
+    await expect(api.testEmbeddingModel()).rejects.toMatch(/pick an embedding model/);
+    await api.setSetting("memory.embedding_model", null, { providerId: "p", modelId: "nomic-embed-text", effort: null, vision: false, tools: false, contextWindow: null });
+    expect(await api.testEmbeddingModel()).toBe(768);
+  });
 });

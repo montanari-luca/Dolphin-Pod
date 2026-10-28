@@ -112,6 +112,7 @@ async fn run_automations(core: &CoreRef) {
 
 fn maintenance(core: &CoreRef) {
     let _ = core.db.purge_tombstones(now_ms() - 30 * 24 * HOUR_MS);
+    let _ = core.db.prune_embeddings();
     if let Ok(orphans) = core.db.orphaned_attachment_paths(now_ms() - 24 * HOUR_MS) {
         for (id, path) in orphans {
             let _ = std::fs::remove_file(&path);

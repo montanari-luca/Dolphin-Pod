@@ -48,6 +48,8 @@ export interface Backend {
   listAgentMemories(agentId: string): Promise<AgentMemory[]>;
   /** Notes other agents shared with this one. Read-only here: their owners change or take them back. */
   listSharedMemories(agentId: string): Promise<AgentMemory[]>;
+  /** Try the chosen embedding model once. The size of the vectors it returns, or why it does not work. */
+  testEmbeddingModel(): Promise<number>;
   addAgentMemory(agentId: string, kind: MemoryKind, text: string, project: string | null): Promise<AgentMemory>;
   updateAgentMemory(memory: AgentMemory): Promise<AgentMemory>;
   deleteAgentMemory(id: string): Promise<void>;

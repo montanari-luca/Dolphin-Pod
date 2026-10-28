@@ -6,6 +6,7 @@
 
 use std::path::Path;
 
+pub mod embed;
 pub mod learner;
 pub mod signals;
 
@@ -103,10 +104,40 @@ fn always(m: &AgentMemory) -> bool {
 /// What to send with this request: entries for this project (or none), all of them while they are few,
 /// otherwise the always-on ones plus the few that share the most words with the request.
 pub fn select<'a>(all: &'a [AgentMemory], project: Option<&str>, query: &str) -> Vec<&'a AgentMemory> {
+    select_ranked(all, project, query, None)
+}
+
+/// The notes for this project (or none) that would have to be ranked by relevance, because there are too many to send
+/// whole. Empty while the memory is small. These are what an embedding model is asked about.
+pub fn rankable<'a>(all: &'a [AgentMemory], project: Option<&str>) -> Vec<&'a AgentMemory> {
+    let candidates: Vec<&AgentMemory> = all.iter().filter(|m| applies_to(m, project)).collect();
+    let size: usize = candidates.iter().map(|m| m.text.len()).sum();
+    if size < preferences::SEND_ALL_BELOW {
+        return vec![];
+    }
+    candidates.into_iter().filter(|m| !always(m)).collect()
+}
+
+/// Like [`select`], ranking by meaning when similarity `scores` are available (see `embed`) and by shared words when
+/// they are not. The always-on notes are sent either way.
+pub fn select_ranked<'a>(all: &'a [AgentMemory], project: Option<&str>, query: &str, scores: Option<&embed::Scores>) -> Vec<&'a AgentMemory> {
     let candidates: Vec<&AgentMemory> = all.iter().filter(|m| applies_to(m, project)).collect();
     let size: usize = candidates.iter().map(|m| m.text.len()).sum();
     if size < preferences::SEND_ALL_BELOW {
         return candidates;
+    }
+    if let Some(scores) = scores {
+        let mut ranked: Vec<(usize, f32)> = candidates
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| !always(m))
+            .filter_map(|(i, m)| scores.get(&m.id).copied().filter(|s| *s >= embed::MIN_SIMILARITY).map(|s| (i, s)))
+            .collect();
+        ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+        let mut picked: Vec<usize> = candidates.iter().enumerate().filter(|(_, m)| always(m)).map(|(i, _)| i).collect();
+        picked.extend(ranked.into_iter().take(MAX_RELEVANT).map(|(i, _)| i));
+        picked.sort_unstable();
+        return picked.into_iter().map(|i| candidates[i]).collect();
     }
     let items: Vec<(&str, bool)> = candidates.iter().map(|m| (m.text.as_str(), always(m))).collect();
     preferences::pick(&items, query, MAX_RELEVANT).into_iter().map(|i| candidates[i]).collect()
@@ -213,6 +244,26 @@ mod tests {
         ] {
             assert!(!looks_secret(fine), "{fine}");
         }
+    }
+
+    #[test]
+    fn meaning_finds_what_shared_words_cannot() {
+        let filler = " and some more words to make this entry long enough".repeat(7);
+        let all = [
+            mem(MemoryKind::Style, &format!("No emojis{filler}"), None),
+            mem(MemoryKind::Fact, &format!("The database is PostgreSQL{filler}"), None),
+            mem(MemoryKind::Fact, &format!("Owns a cat called Miso{filler}"), None),
+            mem(MemoryKind::Workflow, &format!("Runs the tests before committing{filler}"), None),
+        ];
+        let first = |sel: Vec<&AgentMemory>| sel.iter().map(|m| m.text.split(" and ").next().unwrap().to_string()).collect::<Vec<_>>();
+        // No word in common with "why is my sql query slow?": shared words find nothing but the always-on note.
+        assert_eq!(first(select(&all, None, "why is my sql slow?")), ["No emojis"]);
+        // Similarity scores, as an embedding model would give them, find the right one and skip the weak ones.
+        let scores: embed::Scores = [(all[1].id.clone(), 0.82), (all[2].id.clone(), 0.12), (all[3].id.clone(), 0.2)].into();
+        assert_eq!(first(select_ranked(&all, None, "why is my sql slow?", Some(&scores))), ["No emojis", "The database is PostgreSQL"]);
+        // Below the floor is not sent however it ranks; the best above it come first-picked, capped.
+        assert_eq!(rankable(&all, None).len(), 3, "the always-on note needs no ranking");
+        assert!(rankable(&all[..1], None).is_empty(), "a small memory is sent whole and needs none");
     }
 
     #[test]

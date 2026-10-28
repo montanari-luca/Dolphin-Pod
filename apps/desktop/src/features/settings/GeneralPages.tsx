@@ -2,7 +2,8 @@ import { Monitor, Moon, Sun } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ModelRef } from "@dolphin/shared";
 import { ModelPicker } from "@/components/ModelPicker";
-import { Input, Row, Segmented, Switch, Textarea } from "@/components/ui";
+import { Button, Input, Row, Segmented, Switch, Textarea } from "@/components/ui";
+import { errorText } from "@/ipc/api";
 import { useApp } from "@/store/app";
 import { Card, PageHeader } from "./SettingsView";
 
@@ -42,6 +43,44 @@ function BoolSetting({ k }: { k: string }) {
   return <Switch checked={Boolean(value)} onChange={(v) => void set(v)} />;
 }
 
+/** Optional: rank an agent's many notes by meaning instead of shared words. A Test button says whether the model works. */
+function EmbeddingModelRow() {
+  const [model, setModel] = useSetting<ModelRef | null>("memory.embedding_model");
+  const api = useApp((s) => s.api);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [testing, setTesting] = useState(false);
+  useEffect(() => setResult(null), [model?.providerId, model?.modelId]);
+  const test = async () => {
+    if (!api) return;
+    setTesting(true);
+    try {
+      const size = await api.testEmbeddingModel();
+      setResult({ ok: true, text: `Works: vectors of ${size} numbers.` });
+    } catch (e) {
+      setResult({ ok: false, text: errorText(e) });
+    } finally {
+      setTesting(false);
+    }
+  };
+  return (
+    <div className="space-y-3 py-3">
+      <p className="text-[12.5px] leading-relaxed text-muted">
+        Optional. When an agent has many notes about you, Dolphin Pod normally sends the ones that share words with your request. An
+        embedding model can pick the ones that <em>mean</em> something related instead (a note about PostgreSQL for a question about a
+        slow sql query). It needs a model that offers embeddings on Ollama, LM Studio, OpenRouter or another OpenAI-compatible server, for
+        example <span className="font-mono">nomic-embed-text</span> on Ollama. If it fails, words are used. Leave it empty to turn it off.
+      </p>
+      <ModelPicker value={model ?? null} onChange={(m) => void setModel(m)} purpose="utility" />
+      {model && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button size="sm" loading={testing} onClick={() => void test()}>Test</Button>
+          {result && <span className={result.ok ? "text-[12.5px] text-success" : "text-[12.5px] text-danger"}>{result.text}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function GeneralPage() {
   const [utility, setUtility] = useSetting<ModelRef | null>("utility.model");
   return (
@@ -55,6 +94,9 @@ export function GeneralPage() {
           </p>
           <ModelPicker value={utility ?? null} onChange={(m) => void setUtility(m)} purpose="utility" />
         </div>
+      </Card>
+      <Card title="Memory">
+        <EmbeddingModelRow />
       </Card>
       <Card title="Cleanup">
         <Row title="Clean chats periodically" description="Global switch. Each chat also has its own setting. Cleaning is done by a scheduler, no model involved.">

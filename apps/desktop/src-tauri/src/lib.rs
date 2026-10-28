@@ -76,6 +76,11 @@ fn list_agent_memories(core: State<CoreRef>, agent_id: String) -> Res<Vec<AgentM
 }
 
 #[tauri::command]
+async fn test_embedding_model(core: State<'_, CoreRef>) -> Res<usize> {
+    core.test_embedding_model().await
+}
+
+#[tauri::command]
 fn list_shared_memories(core: State<CoreRef>, agent_id: String) -> Res<Vec<AgentMemory>> {
     core.list_shared_memories(&agent_id)
 }
@@ -490,6 +495,7 @@ pub fn run() {
             update_agent,
             list_agent_memories,
             list_shared_memories,
+            test_embedding_model,
             add_agent_memory,
             update_agent_memory,
             delete_agent_memory,

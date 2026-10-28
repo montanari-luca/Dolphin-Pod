@@ -16,6 +16,19 @@ use serde_json::json;
 #[derive(Default)]
 struct Scripted {
     requests: Mutex<Vec<ChatRequest>>,
+    /// What each embeddings call was asked to embed.
+    embed_calls: Mutex<Vec<Vec<String>>>,
+    embed_fails: std::sync::atomic::AtomicBool,
+}
+
+/// A stand-in embedding model: a text becomes counts of the words from a few topics, so "sql" and "PostgreSQL" are
+/// close in meaning here though they share no word.
+fn fake_embedding(text: &str) -> Vec<f32> {
+    const TOPICS: [&[&str]; 4] = [&["sql", "database", "postgresql", "query", "queries"], &["emoji", "terse", "brief", "short"], &["cat", "pet", "miso"], &["tests", "committing", "commit"]];
+    let lower = text.to_lowercase();
+    let mut v: Vec<f32> = TOPICS.iter().map(|words| words.iter().filter(|w| lower.contains(**w)).count() as f32).collect();
+    v.push(0.01);
+    v
 }
 
 #[async_trait]
@@ -26,6 +39,14 @@ impl Provider for Scripted {
     async fn list_models(&self) -> dolphin_core::Result<Vec<ModelInfo>> {
         Ok(vec![])
     }
+    async fn embed(&self, _model: &str, inputs: &[String]) -> dolphin_core::Result<Vec<Vec<f32>>> {
+        self.embed_calls.lock().unwrap().push(inputs.to_vec());
+        if self.embed_fails.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(dolphin_core::CoreError::provider("the embedding server is down"));
+        }
+        Ok(inputs.iter().map(|t| fake_embedding(t)).collect())
+    }
+
     async fn stream_chat(&self, req: ChatRequest) -> dolphin_core::Result<EventStream> {
         self.requests.lock().unwrap().push(req);
         let events = vec![
@@ -40,6 +61,7 @@ impl Provider for Scripted {
 struct Pod {
     core: CoreRef,
     provider: Arc<Scripted>,
+    provider_id: String,
     dir: tempfile::TempDir,
 }
 
@@ -63,7 +85,7 @@ fn pod() -> Pod {
     }
     // These tests are about other things; the council has its own tests in council.rs.
     core.set_setting("council.enabled", None, json!(false)).unwrap();
-    Pod { core, provider, dir }
+    Pod { core, provider, provider_id: cfg.id, dir }
 }
 
 fn chat(core: &CoreRef, name: &str) -> Chat {
@@ -309,4 +331,112 @@ fn sharing_is_checked_and_every_agent_it_reaches_is_told() {
     assert_eq!(p.core.list_shared_memories(&roger.id).unwrap().len(), 1);
     p.core.forget_agent_memories(&rick.id).unwrap();
     assert!(p.core.list_shared_memories(&roger.id).unwrap().is_empty());
+}
+
+// ---------------------------------------------------------------- ranking notes by meaning
+
+const FILLER: &str = " and some more words to make this note long enough to count";
+
+/// Rick with a memory too big to send whole: one standing rule and four notes, one of them about his database.
+fn crowded_memory(p: &Pod) -> Vec<AgentMemory> {
+    let rick = agent(&p.core, "rick").id;
+    let add = |kind, text: &str| p.core.add_agent_memory(&rick, kind, &format!("{text}{}", FILLER.repeat(4)), None).unwrap();
+    vec![
+        add(MemoryKind::Style, "Terse answers, no emoji"),
+        add(MemoryKind::Fact, "The database is PostgreSQL"),
+        add(MemoryKind::Fact, "Owns a cat called Miso"),
+        add(MemoryKind::Workflow, "Runs the tests before committing"),
+        add(MemoryKind::Fact, "Works from Berlin"),
+    ]
+}
+
+fn use_embedding_model(p: &Pod) {
+    let model = ModelRef { provider_id: p.provider_id.clone(), model_id: "nomic-embed-text".into(), effort: None, vision: false, tools: false, context_window: None };
+    p.core.set_setting("memory.embedding_model", None, serde_json::to_value(model).unwrap()).unwrap();
+}
+
+async fn ask_rick(p: &Pod, text: &str, n: usize) -> String {
+    let c = chat(&p.core, "Coding");
+    p.core.send_message(&c.id, &format!("@Rick {text}"), vec![]).await.unwrap();
+    wait_for_answers(&p.core, &c.id, n).await;
+    last_request(p, "Rick").1
+}
+
+fn embedded_texts(p: &Pod) -> Vec<Vec<String>> {
+    p.provider.embed_calls.lock().unwrap().clone()
+}
+
+#[tokio::test]
+async fn meaning_picks_the_note_that_shared_words_would_miss() {
+    let p = pod();
+    crowded_memory(&p);
+
+    // Without an embedding model the words decide: nothing in "why is my sql query slow" matches the PostgreSQL note.
+    let by_words = ask_rick(&p, "why is my sql slow?", 1).await;
+    assert!(by_words.contains("Terse answers") && !by_words.contains("PostgreSQL"), "{by_words}");
+    assert!(embedded_texts(&p).is_empty(), "no model chosen: nothing is embedded");
+
+    use_embedding_model(&p);
+    let by_meaning = ask_rick(&p, "why is my sql slow?", 2).await;
+    assert!(by_meaning.contains("The database is PostgreSQL"), "{by_meaning}");
+    assert!(by_meaning.contains("Terse answers"), "the standing rule is still sent");
+    assert!(!by_meaning.contains("Owns a cat") && !by_meaning.contains("Berlin"), "unrelated notes are not: {by_meaning}");
+}
+
+#[tokio::test]
+async fn each_note_is_embedded_once_and_again_only_when_reworded() {
+    let p = pod();
+    let notes = crowded_memory(&p);
+    use_embedding_model(&p);
+
+    ask_rick(&p, "why is my sql slow?", 1).await;
+    let first = embedded_texts(&p);
+    assert_eq!(first.len(), 1, "one batched call");
+    assert_eq!(first[0].len(), 5, "the request and the four notes that are ranked: the standing rule is always sent and needs no vector");
+
+    ask_rick(&p, "which sql query is slowest?", 2).await;
+    let second = embedded_texts(&p);
+    assert_eq!(second[1], vec!["which sql query is slowest?".to_string()], "notes already embedded are not embedded again");
+
+    let db_note = &notes[1];
+    p.core.update_agent_memory(AgentMemory { text: format!("The database is MySQL{}", FILLER.repeat(4)), ..db_note.clone() }).unwrap();
+    ask_rick(&p, "why is my sql slow?", 3).await;
+    let third = embedded_texts(&p);
+    assert_eq!(third[2].len(), 2, "the request and the one note that changed: {:?}", third[2]);
+    assert!(third[2][1].starts_with("The database is MySQL"));
+}
+
+#[tokio::test]
+async fn a_failing_embedding_model_costs_nothing_but_the_better_ranking() {
+    let p = pod();
+    crowded_memory(&p);
+    use_embedding_model(&p);
+    p.provider.embed_fails.store(true, std::sync::atomic::Ordering::SeqCst);
+
+    let tail = ask_rick(&p, "write a function that names my cat Miso", 1).await;
+    assert!(tail.contains("Owns a cat called Miso"), "shared words still work when the model is down: {tail}");
+    assert!(tail.contains("Terse answers"));
+    let coding = chat(&p.core, "Coding");
+    let msgs = p.core.list_messages(&coding.id, 50).unwrap();
+    assert!(msgs.iter().any(|m| m.agent_id.is_some() && m.status == MessageStatus::Done && m.content == "ok"), "the request itself was answered");
+}
+
+#[tokio::test]
+async fn a_small_memory_never_asks_the_embedding_model() {
+    let p = pod();
+    p.core.add_agent_memory(&agent(&p.core, "rick").id, MemoryKind::Fact, "The database is PostgreSQL", None).unwrap();
+    use_embedding_model(&p);
+    let tail = ask_rick(&p, "why is my sql slow?", 1).await;
+    assert!(tail.contains("PostgreSQL"), "a few notes are sent whole");
+    assert!(embedded_texts(&p).is_empty());
+}
+
+#[tokio::test]
+async fn the_test_button_says_whether_the_embedding_model_works() {
+    let p = pod();
+    assert!(p.core.test_embedding_model().await.unwrap_err().to_string().contains("pick an embedding model"));
+    use_embedding_model(&p);
+    assert_eq!(p.core.test_embedding_model().await.unwrap(), 5, "the size of the vectors");
+    p.provider.embed_fails.store(true, std::sync::atomic::Ordering::SeqCst);
+    assert!(p.core.test_embedding_model().await.unwrap_err().to_string().contains("embedding server is down"));
 }

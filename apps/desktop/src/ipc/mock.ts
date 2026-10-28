@@ -331,6 +331,8 @@ export function mockBackend(): MockBackend {
     "chat.paste_threshold": 6000,
     "routing.show_briefs": true,
     "council.enabled": true,
+    "learning.reflect": false,
+    "memory.embedding_model": null,
     "web.access": true,
     "safety.taint_guard": true,
     "app.onboarded": false,
@@ -490,6 +492,10 @@ export function mockBackend(): MockBackend {
       for (let i = memories.length - 1; i >= 0; i--) if (memories[i].agentId === agentId) memories.splice(i, 1);
       if (gone.length > 0) tell(gone);
       return gone.length;
+    },
+    async testEmbeddingModel() {
+      if (!settings["memory.embedding_model"]) throw "pick an embedding model first";
+      return 768;
     },
     async listSharedMemories(agentId) {
       return structuredClone(memories.filter((m) => sharedWith(m.share, m.agentId, agentId)));

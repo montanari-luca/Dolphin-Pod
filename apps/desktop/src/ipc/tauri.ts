@@ -17,6 +17,7 @@ export function tauriBackend(): Backend {
     updateAgent: (agent) => invoke("update_agent", { agent }),
     listAgentMemories: (agentId) => invoke("list_agent_memories", { agentId }),
     listSharedMemories: (agentId) => invoke("list_shared_memories", { agentId }),
+    testEmbeddingModel: () => invoke("test_embedding_model"),
     addAgentMemory: (agentId, kind, text, project) => invoke("add_agent_memory", { agentId, kind, text, project }),
     updateAgentMemory: (memory) => invoke("update_agent_memory", { memory }),
     deleteAgentMemory: (id) => invoke("delete_agent_memory", { id }),

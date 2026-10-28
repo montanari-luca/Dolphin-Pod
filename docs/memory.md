@@ -52,6 +52,22 @@ Notes arrive after the chat history, not as part of the agent's instructions, so
 cache. An agent is only sent its own notes, plus any that you shared with it (below). Your global **Preferences**
 (Settings → Preferences) are separate and still apply to every agent.
 
+### Picking by meaning (optional)
+
+By default, once an agent has many notes, the ones sent with a request are the ones that share words with it. That misses
+a note about "PostgreSQL" when you ask about a "slow sql query". If you set an **Embedding model** (Settings → General →
+Memory), Dolphin Pod compares the *meaning* of your request with each note instead, and sends the closest few.
+
+It needs a model that offers embeddings, on Ollama, LM Studio, OpenRouter or another OpenAI-compatible server; a chat
+model usually can't (Ollama answers "this model does not support embeddings"). On Ollama, `nomic-embed-text` is a small
+choice. Press **Test** after picking one to see whether it works. Nothing is chosen or downloaded for you, and the setting
+is empty by default.
+
+Each note is embedded once per model and the vector is kept on this device (it is rebuilt if you reword the note). Only the
+text of your request and of notes not seen before is sent to the embedding model, in one call. An agent with only a few
+notes still gets all of them and never calls it. If the model is down, too slow (over four seconds) or answers oddly, the
+request carries on with word matching, with no error.
+
 ### Sharing a note with other agents
 
 Some things are true for every agent: "keep answers under three sentences", "I work in Rust". Rather than teach each one,
