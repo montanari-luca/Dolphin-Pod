@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
-import { AlertTriangle, ArrowRight, CheckCircle2, ChevronRight, CircleSlash, ClipboardList, Copy, FileText, Loader2, Settings2, ShieldAlert, Sparkles, Undo2, Wrench } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronRight, CircleSlash, ClipboardList, Copy, FileText, Loader2, Settings2, ShieldAlert, Sparkles, ThumbsDown, ThumbsUp, Undo2, Wrench } from "lucide-react";
 import { memo, useEffect, useState } from "react";
-import type { Agent, Attachment, FileChange, Message, RevertReport } from "@dolphin/shared";
+import type { Agent, Attachment, FileChange, Message, Rating, RevertReport } from "@dolphin/shared";
 import { AgentAvatar, AgentHoverCard, AgentName } from "@/components/agent";
 import { UserAvatar, UserHoverCard, UserNameText } from "@/components/user";
 import { Markdown } from "@/components/Markdown";
@@ -9,6 +9,7 @@ import { ThinkingBlock } from "@/components/ThinkingBlock";
 import { Badge, Button, ConfirmDialog, Dialog } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { formatBytes, formatDuration, formatTime, formatTokens } from "@/lib/format";
+import { nextRating, ratingOf } from "@/lib/rating";
 import { useApp } from "@/store/app";
 
 type Meta = {
@@ -80,7 +81,7 @@ export const MessageItem = memo(function MessageItem({ message, agent, grouped }
         {message.status === "error" && <ErrorBox message={message} agent={agent} needsSetup={meta.needsSetup} />}
         {message.status === "cancelled" && message.content !== "_Stopped._" && <div className="mt-1 inline-flex items-center gap-1 text-[11.5px] text-faint"><CircleSlash className="size-3" /> Stopped</div>}
         {message.kind === "plan" && message.status === "done" && <PlanBar message={message} approved={!!meta.plan?.approved} agent={agent} />}
-        {!isUser && message.status === "done" && <Footer message={message} />}
+        {!isUser && message.status === "done" && <Footer message={message} agent={agent} />}
       </div>
     </div>
   );
@@ -350,28 +351,62 @@ function PlanBar({ message, approved, agent }: { message: Message; approved: boo
   );
 }
 
-function Footer({ message }: { message: Message }) {
+/** Thumbs up / down on an agent's answer. The chosen one stays visible; the other appears on hover. */
+function Rate({ message, agent }: { message: Message; agent?: Agent }) {
+  const api = useApp((s) => s.api);
+  const run = useApp((s) => s.run);
+  const current = ratingOf(message);
+  const set = (clicked: Rating) => {
+    if (api) void run(api.rateMessage(message.id, nextRating(current, clicked)));
+  };
+  const note = agent && !agent.learning ? ` (${agent.name} isn't learning right now)` : agent ? `. ${agent.name} learns from it` : "";
+  const thumb = (value: Rating, Icon: typeof ThumbsUp, label: string) => (
+    <button
+      aria-label={label}
+      aria-pressed={current === value}
+      title={current === value ? `${label}: click to take it back` : `${label}${note}`}
+      onClick={() => set(value)}
+      className={cn(
+        "inline-flex items-center transition-opacity hover:text-fg",
+        current === value ? "text-accent opacity-100" : "opacity-0 group-hover:opacity-100",
+      )}
+    >
+      <Icon className="size-3" fill={current === value ? "currentColor" : "none"} />
+    </button>
+  );
+  return (
+    <span className="inline-flex items-center gap-2">
+      {thumb("up", ThumbsUp, "Good answer")}
+      {thumb("down", ThumbsDown, "Not what I wanted")}
+    </span>
+  );
+}
+
+function Footer({ message, agent }: { message: Message; agent?: Agent }) {
   const [copied, setCopied] = useState(false);
   const tokens = (message.tokensIn ?? 0) + (message.tokensOut ?? 0);
   const ctx = (message.meta as Meta | undefined)?.context;
   return (
-    <div className="mt-1 flex h-5 items-center gap-3 text-[11px] text-faint opacity-0 transition-opacity group-hover:opacity-100">
-      {message.workingMs != null && <span>{formatDuration(message.workingMs)}</span>}
-      {message.thinkingMs != null && <span>thought {formatDuration(message.thinkingMs)}</span>}
-      {tokens > 0 && <span>{formatTokens(tokens)} tokens</span>}
-      {(ctx?.cacheRead ?? 0) > 0 && <span title="Input tokens served from the provider's prompt cache">{formatTokens(ctx!.cacheRead!)} cached</span>}
-      {(ctx?.savedTokens ?? 0) > 0 && <span title="Tool output compressed before the model saw it. The full text stays retrievable.">−{formatTokens(ctx!.savedTokens!)} compressed</span>}
-      {(ctx?.compactions ?? 0) > 0 && <span title="Older context was summarized to stay within the model's window">compacted context</span>}
-      <button
-        className="inline-flex items-center gap-1 hover:text-fg"
-        onClick={() => {
-          void navigator.clipboard.writeText(message.content);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1200);
-        }}
-      >
-        <Copy className="size-3" /> {copied ? "Copied" : "Copy"}
-      </button>
+    <div className="mt-1 flex h-5 items-center gap-3 text-[11px] text-faint">
+      <span className="flex items-center gap-3 opacity-0 transition-opacity group-hover:opacity-100">
+        {message.workingMs != null && <span>{formatDuration(message.workingMs)}</span>}
+        {message.thinkingMs != null && <span>thought {formatDuration(message.thinkingMs)}</span>}
+        {tokens > 0 && <span>{formatTokens(tokens)} tokens</span>}
+        {(ctx?.cacheRead ?? 0) > 0 && <span title="Input tokens served from the provider's prompt cache">{formatTokens(ctx!.cacheRead!)} cached</span>}
+        {(ctx?.savedTokens ?? 0) > 0 && <span title="Tool output compressed before the model saw it. The full text stays retrievable.">−{formatTokens(ctx!.savedTokens!)} compressed</span>}
+        {(ctx?.compactions ?? 0) > 0 && <span title="Older context was summarized to stay within the model's window">compacted context</span>}
+        <button
+          className="inline-flex items-center gap-1 hover:text-fg"
+          onClick={() => {
+            void navigator.clipboard.writeText(message.content);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1200);
+          }}
+        >
+          <Copy className="size-3" /> {copied ? "Copied" : "Copy"}
+        </button>
+      </span>
+      <Rate message={message} agent={agent} />
     </div>
   );
 }

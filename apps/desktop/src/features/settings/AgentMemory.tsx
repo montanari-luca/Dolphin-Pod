@@ -65,7 +65,7 @@ export function AgentMemoryPanel({ agent, learning, onLearningChange }: { agent:
           <span className="font-medium text-fg">Learn from my corrections</span>
           <br />
           {learning
-            ? `${agent.name} notes lasting preferences when you correct them, undo their changes or decline an action, and can save notes themself. Notes it writes are marked “learned”.`
+            ? `${agent.name} notes lasting preferences when you correct them, undo their changes, decline an action or give a thumbs down, and can save notes themself. Notes it writes are marked “learned”.`
             : `${agent.name} won't add notes on their own. Saying “remember that…” and the list below still work.`}
           {learning !== agent.learning && <span className="text-warning"> Press Save to apply.</span>}
         </div>

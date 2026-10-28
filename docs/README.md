@@ -6,6 +6,7 @@ appears in the sidebar, list it in `apps/website/src/lib/docs.ts`.
 
 - [Getting started](getting-started.md)
 - [Agents](agents.md)
+- [Personality, memory and learning](memory.md)
 - [Your profile and roles](profile.md)
 - [Providers and models](providers.md)
 - [Routing: Roger, Lincoln and @ mentions](routing.md)

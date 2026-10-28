@@ -30,6 +30,8 @@ export interface Toast {
   id: number;
   level: "info" | "success" | "warning" | "error";
   text: string;
+  /** A button on the toast (e.g. Undo). Running it also closes the toast. */
+  action?: { label: string; run: () => void | Promise<void> };
 }
 
 export interface Activity {
@@ -74,7 +76,7 @@ interface State {
   refreshProviders(): Promise<void>;
   refreshSettings(): Promise<void>;
   setSetting(key: string, value: unknown, target?: string | null): Promise<boolean>;
-  toast(level: Toast["level"], text: string): void;
+  toast(level: Toast["level"], text: string, action?: Toast["action"]): void;
   dismissToast(id: number): void;
   run<T>(p: Promise<T>, okText?: string): Promise<T | undefined>;
 }
@@ -236,9 +238,23 @@ export const useApp = create<State>((set, get) => ({
           set((s) => ({ settings: { ...s.settings, [key]: value } }));
         }
         break;
-      case "memoryLearned":
-        // The list reloads from `memoriesChanged`; the "learned" toast with Undo is Phase 4.
+      case "memoryLearned": {
+        // The list reloads from `memoriesChanged`; here the user is told, and can take it back.
+        const { memory, previousText } = e;
+        const who = get().agents.find((a) => a.id === memory.agentId)?.name ?? "An agent";
+        const undo = async () => {
+          const api = get().api;
+          if (!api) return;
+          try {
+            if (previousText == null) await api.deleteAgentMemory(memory.id);
+            else await api.updateAgentMemory({ ...memory, text: previousText });
+          } catch (err) {
+            get().toast("error", errorText(err));
+          }
+        };
+        get().toast("info", `${who} ${previousText == null ? "learned" : "updated a note"}: “${memory.text}”`, { label: "Undo", run: undo });
         break;
+      }
       case "memoriesChanged":
         set((s) => ({ memoryVersion: { ...s.memoryVersion, [e.agentId]: (s.memoryVersion[e.agentId] ?? 0) + 1 } }));
         break;
@@ -315,10 +331,11 @@ export const useApp = create<State>((set, get) => ({
     }
   },
 
-  toast(level, text) {
+  toast(level, text, action) {
     const id = toastSeq++;
-    set((s) => ({ toasts: [...s.toasts.slice(-3), { id, level, text }] }));
-    setTimeout(() => get().dismissToast(id), level === "error" ? 7000 : 3800);
+    set((s) => ({ toasts: [...s.toasts.slice(-3), { id, level, text, action }] }));
+    // A toast with a button needs time to be read and used.
+    setTimeout(() => get().dismissToast(id), action ? 9000 : level === "error" ? 7000 : 3800);
   },
 
   dismissToast(id) {
