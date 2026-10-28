@@ -6,6 +6,9 @@
 
 use std::path::Path;
 
+pub mod learner;
+pub mod signals;
+
 use crate::model::{AgentMemory, MemoryKind};
 use crate::preferences;
 
@@ -15,6 +18,16 @@ pub const MAX_ENTRIES: usize = 40;
 pub const MAX_TEXT_CHARS: usize = 300;
 /// How many relevance-picked entries (facts, workflows) ride along with the ones that always apply.
 const MAX_RELEVANT: usize = 6;
+
+/// The kind as the learner's prompt names it.
+pub fn kind_name(k: MemoryKind) -> &'static str {
+    match k {
+        MemoryKind::Style => "style",
+        MemoryKind::Fact => "fact",
+        MemoryKind::Workflow => "workflow",
+        MemoryKind::Avoid => "avoid",
+    }
+}
 
 /// The project a workspace belongs to: its folder name. The path itself is device-local and never syncs,
 /// so a tag made from it would mean nothing on another device.
@@ -31,6 +44,47 @@ pub fn clean_text(s: &str) -> Option<String> {
 /// A project tag as stored: trimmed, blank meaning "everywhere".
 pub fn clean_project(s: Option<&str>) -> Option<String> {
     s.map(str::trim).filter(|p| !p.is_empty()).map(str::to_string)
+}
+
+/// Whether a note looks like it contains a secret (a key, a token, a password, a card number). The learner never saves
+/// those: a note is sent to a model with every request.
+pub fn looks_secret(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    if lower.contains("-----begin") {
+        return true;
+    }
+    const LABELS: &[&str] = &["password", "passwd", "passphrase", "secret", "api key", "api_key", "apikey", "token", "pin code", "private key"];
+    const LINKS: &[&str] = &[" is ", " was ", ": ", " = ", "=", ":"];
+    if LABELS.iter().any(|l| LINKS.iter().any(|k| lower.contains(&format!("{l}{k}")))) {
+        // "Never paste a password: use the vault" is a rule about secrets, not a secret.
+        let rule = ["never ", "don't ", "do not ", "avoid ", "without "].iter().any(|w| lower.contains(w));
+        if !rule {
+            return true;
+        }
+    }
+    const PREFIXES: &[&str] = &["sk-", "sk_", "ghp_", "gho_", "ghs_", "github_pat_", "glpat-", "xoxb-", "xoxp-", "akia", "aiza", "eyj"];
+    let tokens = text.split(|c: char| c.is_whitespace() || matches!(c, ',' | ';' | '"' | '\'' | '`' | '(' | ')'));
+    for t in tokens {
+        let tl = t.to_lowercase();
+        let keylike = t.len() >= 20 && t.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '+' | '/' | '='));
+        if keylike && PREFIXES.iter().any(|p| tl.starts_with(p)) {
+            return true;
+        }
+        // A long unbroken mix of letters and digits is a hash, a key or a token, not a sentence.
+        if t.len() >= 32 && keylike && t.chars().any(|c| c.is_ascii_digit()) && t.chars().any(|c| c.is_ascii_alphabetic()) {
+            return true;
+        }
+    }
+    // A card or account number: thirteen or more digits in a row once spaces and dashes are ignored.
+    let digits: String = text.chars().filter(|c| !matches!(c, ' ' | '-')).collect();
+    let mut run = 0;
+    for c in digits.chars() {
+        run = if c.is_ascii_digit() { run + 1 } else { 0 };
+        if run >= 13 {
+            return true;
+        }
+    }
+    false
 }
 
 fn applies_to(m: &AgentMemory, project: Option<&str>) -> bool {
@@ -132,6 +186,32 @@ mod tests {
         let sel = select(&all, None, "why is my PostgreSQL query slow?");
         let texts: Vec<&str> = sel.iter().map(|m| m.text.split(" and ").next().unwrap()).collect();
         assert_eq!(texts, ["No emojis", "Never rewrite the whole file", "The database is PostgreSQL", "Pinned habit about invoices"]);
+    }
+
+    #[test]
+    fn secrets_are_recognised_and_ordinary_notes_are_not() {
+        for secret in [
+            "The password is hunter2",
+            "my api key: abcdef",
+            "Use token=abc123 for the staging API",
+            "sk-proj-AbCdEfGhIjKlMnOpQrStUv",
+            "ghp_16C7e42F292c6912E7710c838347Ae178B4a",
+            "-----BEGIN RSA PRIVATE KEY-----",
+            "Card number 4242 4242 4242 4242",
+            "The hash is 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+        ] {
+            assert!(looks_secret(secret), "{secret}");
+        }
+        for fine in [
+            "Keep answers under three sentences",
+            "Never paste a password into the chat: use the vault",
+            "The user prefers tokens of at most 4000 per answer",
+            "Runs PostgreSQL 16 on port 5432",
+            "Call me chief",
+            "Don't log the API key",
+        ] {
+            assert!(!looks_secret(fine), "{fine}");
+        }
     }
 
     #[test]

@@ -35,4 +35,15 @@ describe("mock agent memory", () => {
     for (let i = 0; i < MEMORY_MAX_ENTRIES; i++) await api.addAgentMemory(rick.id, "fact", `fact ${i}`, null);
     await expect(api.addAgentMemory(rick.id, "fact", "one too many", null)).rejects.toMatch(/forget some first/);
   });
+
+  it("rates an agent's message, and refuses to rate the user's", async () => {
+    const api = mockBackend();
+    const [rick] = await api.listAgents();
+    const [coding] = await api.listChats();
+    await api.sendMessage(coding.id, `@${rick.name} hello`, []);
+    await new Promise((r) => setTimeout(r, 50));
+    const msgs = await api.listMessages(coding.id, 50);
+    const mine = msgs.find((m) => !m.agentId)!;
+    await expect(api.rateMessage(mine.id, "up")).rejects.toMatch(/only an agent/);
+  });
 });

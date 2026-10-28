@@ -299,9 +299,21 @@ pub struct Agent {
     /// The user's own description of this agent's voice and character. Layered on top of the built-in
     /// specialty text, which carries the working instructions; `None` adds nothing.
     pub persona: Option<String>,
+    /// Whether the agent learns from your corrections, reverts and ratings (and may save notes with its `remember` tool).
+    /// Saying "remember that..." and the Memory list work either way.
+    pub learning: bool,
     pub sort: i32,
     #[ts(type = "number")]
     pub updated_at: i64,
+}
+
+/// A thumbs up or down on an agent's message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum Rating {
+    Up,
+    Down,
 }
 
 /// What a memory is about. `Style` and `Avoid` are small standing rules and always reach the agent;

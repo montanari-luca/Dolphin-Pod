@@ -84,7 +84,7 @@ impl Core {
     }
 
     /// Put the files a run changed back the way they were. Files edited again since are left alone and reported.
-    pub async fn revert_run(&self, message_id: &str) -> Result<RevertReport> {
+    pub async fn revert_run(self: &Arc<Self>, message_id: &str) -> Result<RevertReport> {
         let (mut msg, chat, ws, before, after) = self.changes_of(message_id)?;
         if msg.meta["changes"]["reverted"].as_bool() == Some(true) {
             return Err(CoreError::invalid("these changes were already reverted"));
@@ -97,6 +97,8 @@ impl Core {
         let left = if report.skipped.is_empty() { String::new() } else { format!(" {} left alone because they changed again afterwards.", report.skipped.len()) };
         let lincoln = self.agent_by_slug("lincoln")?;
         self.post(&chat.id, &lincoln.id, MessageKind::Notice, &format!("↩️ Reverted {} file(s) changed by {who}.{left}", report.restored.len()), json!({ "notice": "revert" }))?;
+        self.note_revert(&chat, &msg, report.restored.len());
+        self.schedule_learning();
         Ok(report)
     }
 }

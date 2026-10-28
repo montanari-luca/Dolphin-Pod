@@ -20,6 +20,7 @@ export function tauriBackend(): Backend {
     updateAgentMemory: (memory) => invoke("update_agent_memory", { memory }),
     deleteAgentMemory: (id) => invoke("delete_agent_memory", { id }),
     forgetAgentMemories: (agentId) => invoke("forget_agent_memories", { agentId }),
+    rateMessage: (messageId, rating) => invoke("rate_message", { messageId, rating }),
     listChats: () => invoke("list_chats"),
     createChat: (name, icon, agentIds) => invoke("create_chat", { name, icon, agentIds }),
     updateChat: (chat) => invoke("update_chat", { chat }),

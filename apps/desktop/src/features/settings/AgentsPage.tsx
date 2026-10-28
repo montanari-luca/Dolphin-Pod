@@ -124,7 +124,7 @@ function AgentEditor({ agent }: { agent: Agent }) {
         />
       </Field>
 
-      <AgentMemoryPanel agent={agent} />
+      <AgentMemoryPanel agent={agent} learning={draft.learning} onLearningChange={(learning) => setDraft({ ...draft, learning })} />
 
       <Field label="Color">
         <GradientEditor value={draft.color} onChange={(color) => setDraft({ ...draft, color })} />

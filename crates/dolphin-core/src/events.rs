@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::model::{ActionLogEntry, Agent, Chat, Message, PermissionGrant, UsageStats, UserRole};
+use crate::model::{ActionLogEntry, Agent, AgentMemory, Chat, Message, PermissionGrant, UsageStats, UserRole};
 use crate::settings::SettingChange;
 use crate::sync::manager::SyncStatus;
 
@@ -52,6 +52,8 @@ pub enum CoreEvent {
     AgentChanged { agent: Agent },
     /// An agent's memory changed (edited here, by its learner, or synced from another device).
     MemoriesChanged { agent_id: String },
+    /// An agent's learner saved or reworded a note. `previous_text` is what a reworded note said before (for Undo).
+    MemoryLearned { memory: AgentMemory, previous_text: Option<String> },
     RolesChanged { roles: Vec<UserRole> },
     SettingChanged { change: SettingChange },
     UsageUpdated { usage: UsageStats },

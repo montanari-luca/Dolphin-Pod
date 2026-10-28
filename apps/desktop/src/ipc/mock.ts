@@ -227,6 +227,7 @@ export function mockBackend(): Backend {
     imageModel: null,
     iosModel: null,
     persona: null,
+    learning: true,
     sort: i,
     updatedAt: now(),
   }));
@@ -470,6 +471,20 @@ export function mockBackend(): Backend {
       for (let i = memories.length - 1; i >= 0; i--) if (memories[i].agentId === agentId) memories.splice(i, 1);
       if (n > 0) emit({ type: "memoriesChanged", agentId });
       return n;
+    },
+    async rateMessage(messageId, rating) {
+      for (const list of messages.values()) {
+        const m = list.find((x) => x.id === messageId);
+        if (!m) continue;
+        if (!m.agentId) throw "only an agent's message can be rated";
+        const meta = { ...(m.meta as Record<string, Message["meta"]>) };
+        delete meta.rating;
+        if (rating) meta.rating = rating;
+        m.meta = meta;
+        update(m);
+        return;
+      }
+      throw `message ${messageId} not found`;
     },
     listChats: async () => structuredClone(chats),
     async createChat(name, icon, agentIds) {

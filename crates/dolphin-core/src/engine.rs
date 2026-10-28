@@ -27,6 +27,7 @@ mod ctx;
 mod delegate;
 mod git;
 mod guard;
+mod learning;
 
 const MAX_TOOL_STEPS: usize = 40;
 /// How often one run may recover from a provider rejecting the prompt as too long.
@@ -175,13 +176,18 @@ impl Core {
 
     async fn pipeline(self: Arc<Self>, chat: Chat, user_msg: Message) {
         let token = self.chat_token(&chat.id);
-        if let Err(e) = self.pipeline_inner(chat.clone(), user_msg, token).await {
+        // A correction is judged against the answer it replies to, so it is noted before this turn adds new ones.
+        self.note_correction(&chat, &user_msg);
+        if let Err(e) = self.pipeline_inner(chat.clone(), user_msg.clone(), token).await {
             if matches!(e, CoreError::Cancelled) {
                 self.settle_cancelled(&chat.id);
             } else {
                 self.pipeline_error(&chat.id, &e);
             }
         }
+        // Whoever answered a "remember that..." learns it; then the learner gets to work in the background.
+        self.note_remember(&chat, &user_msg);
+        self.schedule_learning();
     }
 
     /// After a stop: every agent in the chat goes idle and a half-finished routing ack is closed,
@@ -569,6 +575,11 @@ impl Core {
         if can_ask {
             tool_specs.push(tools::ask_spec());
         }
+        // Saving notes about the user is something the agent does while talking to them: not in automations or delegated runs.
+        let can_remember = model.tools && agent.learning && task.delegated_by.is_none() && turn.user_msg.meta.get("automation").is_none();
+        if can_remember {
+            tool_specs.push(tools::remember_spec());
+        }
         let ctx_cfg = ContextSettings::load(&self.db);
         let mut rc = RunContext::new(context::Budget::new(window::resolve(&model, cfg.kind, ctx_cfg.local_window), ctx_cfg.compact_at), ctx_cfg);
         if ctx_cfg.compress_tools && model.tools {
@@ -584,6 +595,7 @@ impl Core {
             has_image_tool: is_image_agent,
             has_web: web,
             has_ask: can_ask,
+            has_remember: can_remember,
             delegates: &delegates,
             // Preferences change with every request; they go after the history so the system prompt and
             // the history stay identical between turns and provider prompt caches keep hitting.
@@ -824,6 +836,8 @@ impl Core {
                         r = self.generate_image(agent, msg, call.arguments["prompt"].as_str().unwrap_or_default()) => r,
                         _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
                     }
+                } else if call.name == tools::REMEMBER_TOOL {
+                    if can_remember { self.remember_tool(agent, &turn.chat, &call.arguments) } else { Err(CoreError::invalid("unknown tool 'remember'")) }
                 } else if call.name == tools::DELEGATE_TOOL {
                     delegations += 1;
                     if delegates.is_empty() {
@@ -948,8 +962,17 @@ impl Core {
                                     self.db.set_shell_policy(&turn.chat.id, &p)?;
                                     Ok(())
                                 }
-                                QuestionAnswer::Custom(t) => Err(CoreError::Permission(format!("the user did not approve this and said: \"{t}\". Do not run it; adjust your approach."))),
-                                _ => Err(CoreError::Permission("the user denied this action. Do not retry it; ask what they would like instead.".into())),
+                                QuestionAnswer::Custom(t) => {
+                                    self.note_denial(turn, agent, &summary, Some(&t));
+                                    Err(CoreError::Permission(format!("the user did not approve this and said: \"{t}\". Do not run it; adjust your approach.")))
+                                }
+                                other => {
+                                    // Dismissing the question is not saying no.
+                                    if !matches!(other, QuestionAnswer::Skipped) {
+                                        self.note_denial(turn, agent, &summary, None);
+                                    }
+                                    Err(CoreError::Permission("the user denied this action. Do not retry it; ask what they would like instead.".into()))
+                                }
                             };
                         }
                     }

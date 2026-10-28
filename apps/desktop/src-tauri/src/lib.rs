@@ -91,6 +91,11 @@ fn delete_agent_memory(core: State<CoreRef>, id: String) -> Res<()> {
 }
 
 #[tauri::command]
+fn rate_message(core: State<CoreRef>, message_id: String, rating: Option<Rating>) -> Res<()> {
+    core.rate_message(&message_id, rating)
+}
+
+#[tauri::command]
 fn forget_agent_memories(core: State<CoreRef>, agent_id: String) -> Res<usize> {
     core.forget_agent_memories(&agent_id)
 }
@@ -468,6 +473,7 @@ pub fn run() {
             update_agent_memory,
             delete_agent_memory,
             forget_agent_memories,
+            rate_message,
             list_chats,
             create_chat,
             update_chat,

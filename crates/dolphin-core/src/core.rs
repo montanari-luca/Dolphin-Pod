@@ -35,6 +35,9 @@ pub struct Core {
     pub(crate) remote: crate::remote::RemoteRuntime,
     platform: Mutex<Platform>,
     on_device: Mutex<Option<Arc<dyn crate::providers::ondevice::OnDeviceRuntime>>>,
+    /// The learner runs one at a time; a signal that arrives while it works makes it go round once more.
+    pub(crate) learning_busy: std::sync::atomic::AtomicBool,
+    pub(crate) learning_again: std::sync::atomic::AtomicBool,
 }
 
 pub type CoreRef = Arc<Core>;
@@ -88,6 +91,8 @@ impl Core {
             remote: Default::default(),
             platform: Mutex::new(Platform::Desktop),
             on_device: Mutex::new(None),
+            learning_busy: Default::default(),
+            learning_again: Default::default(),
         }))
     }
 
@@ -281,6 +286,7 @@ impl Core {
         merged.image_model = a.image_model;
         merged.ios_model = a.ios_model;
         merged.persona = a.persona.as_deref().and_then(settings::clean_persona);
+        merged.learning = a.learning;
         if merged.persona.as_ref().is_some_and(|p| p.chars().count() > settings::PERSONA_MAX_CHARS) {
             return Err(CoreError::invalid(format!("the persona is limited to {} characters", settings::PERSONA_MAX_CHARS)));
         }

@@ -1,13 +1,16 @@
 import { Brain, Pin, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Agent, AgentMemory, MemoryKind } from "@dolphin/shared";
-import { Badge, Button, ConfirmDialog, IconButton, Input, Select } from "@/components/ui";
+import { Badge, Button, ConfirmDialog, IconButton, Input, Select, Switch } from "@/components/ui";
 import { errorText } from "@/ipc/api";
 import { MEMORY_KINDS, MEMORY_MAX_ENTRIES, MEMORY_MAX_TEXT, projectOf } from "@/lib/memory";
 import { useApp } from "@/store/app";
 
-/** What one agent has learned about you. Changes save as you go; only this agent ever sees them. */
-export function AgentMemoryPanel({ agent }: { agent: Agent }) {
+/**
+ * What one agent has learned about you. Changes to the list save as you go; only this agent ever sees them.
+ * The learning switch belongs to the agent itself, so it goes through the editor's draft and Save like its other settings.
+ */
+export function AgentMemoryPanel({ agent, learning, onLearningChange }: { agent: Agent; learning: boolean; onLearningChange: (on: boolean) => void }) {
   const api = useApp((s) => s.api);
   const toast = useApp((s) => s.toast);
   const version = useApp((s) => s.memoryVersion[agent.id] ?? 0);
@@ -54,6 +57,18 @@ export function AgentMemoryPanel({ agent }: { agent: Agent }) {
           </p>
         </div>
         <span className="text-[11px] tabular-nums text-faint">{items?.length ?? 0} / {MEMORY_MAX_ENTRIES}</span>
+      </div>
+
+      <div className="flex items-start gap-2.5 rounded-md bg-hover/60 px-2.5 py-2">
+        <Switch checked={learning} onChange={onLearningChange} label={`${agent.name} learns from you`} />
+        <div className="min-w-0 flex-1 text-[12px] leading-relaxed text-muted">
+          <span className="font-medium text-fg">Learn from my corrections</span>
+          <br />
+          {learning
+            ? `${agent.name} notes lasting preferences when you correct them, undo their changes or decline an action, and can save notes themself. Notes it writes are marked “learned”.`
+            : `${agent.name} won't add notes on their own. Saying “remember that…” and the list below still work.`}
+          {learning !== agent.learning && <span className="text-warning"> Press Save to apply.</span>}
+        </div>
       </div>
 
       {items && items.length === 0 && <p className="text-[12.5px] text-faint">{agent.name} hasn't learned anything yet.</p>}

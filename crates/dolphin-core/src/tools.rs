@@ -44,7 +44,21 @@ pub fn delegate_spec(delegates: &[crate::model::Agent]) -> ToolSpec {
 }
 
 pub const ASK_TOOL: &str = "ask_user";
+pub const REMEMBER_TOOL: &str = "remember";
 pub const MAX_QUESTION_OPTIONS: usize = 4;
+
+/// The note-taking tool: one lasting thing about the user, saved to the agent's own memory.
+pub fn remember_spec() -> ToolSpec {
+    spec(
+        REMEMBER_TOOL,
+        "Save one lasting note about this user for future conversations: a preference, a habit, a fact about them or their setup, or something not to do again. Use it sparingly, only for things that will still matter later; never for one-off task details, code, passwords, keys or tokens.",
+        json!({ "type": "object", "properties": {
+            "text": { "type": "string", "description": "One short sentence, phrased as an instruction or fact (\"Keep answers under three sentences\")." },
+            "kind": { "type": "string", "enum": ["style", "fact", "workflow", "avoid"], "description": "style: how to sound; fact: true about them; workflow: how they like work done; avoid: do not do again. Default fact." },
+            "project_only": { "type": "boolean", "description": "True only if this applies to the current project alone." }
+        }, "required": ["text"] }),
+    )
+}
 
 /// The question tool. The UI adds its own "Other" field, so the agent only lists real choices.
 pub fn ask_spec() -> ToolSpec {
@@ -297,6 +311,7 @@ pub fn summarize(name: &str, args: &Value) -> String {
         "fetch_page" => format!("Opened {}", truncate(&a("url"), 80)),
         DELEGATE_TOOL => format!("Asked {}: {}", a("agent"), truncate(&a("task"), 70)),
         ASK_TOOL => format!("Asked you: {}", truncate(&a("question"), 80)),
+        REMEMBER_TOOL => format!("Noted: {}", truncate(&a("text"), 80)),
         "git" => format!("Ran `git {}`", truncate(&crate::gittool::parse_args(args).map(|a| crate::gittool::normalize(&a)).unwrap_or_default(), 80)),
         "generate_image" => "Generated an image".into(),
         "context_retrieve" => "Re-read a compressed result".into(),

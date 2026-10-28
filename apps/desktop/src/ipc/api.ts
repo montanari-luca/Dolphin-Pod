@@ -14,6 +14,7 @@ import type {
   ModelInfo,
   PermissionGrant,
   PermissionLevel,
+  Rating,
   ShellPolicy,
   RevertReport,
   RemoteSettings,
@@ -49,6 +50,8 @@ export interface Backend {
   deleteAgentMemory(id: string): Promise<void>;
   /** Wipe everything one agent remembers. How many entries went. */
   forgetAgentMemories(agentId: string): Promise<number>;
+  /** Thumbs up or down on an agent's message; `null` takes the rating back. Agents learn from it (when learning is on). */
+  rateMessage(messageId: string, rating: Rating | null): Promise<void>;
   listChats(): Promise<Chat[]>;
   createChat(name: string, icon: string, agentIds: string[]): Promise<Chat>;
   updateChat(chat: Chat): Promise<Chat>;

@@ -48,6 +48,32 @@ An agent only ever sees its own memory, never another agent's, and an agent can 
 characters each. Memory syncs between your devices with the rest of the agent. "Forget everything" empties an
 agent's memory for good. Your global preferences (Settings → Preferences) are separate and still apply to every agent.
 
+### Learning
+
+An agent also adds to its own memory as you work with it. It notices when you:
+
+- **correct it** right after an answer ("no, use tabs", "don't add comments", "too long");
+- **undo its changes** with the revert button on a run;
+- **decline an action** it asked to take (answering Deny to an approval);
+- **ask it to remember** something: "remember that I use pnpm", "from now on answer in French". Whoever answered the
+  message keeps it, exactly as you said it if nothing better can be made of it.
+
+Agents with a model that supports tools can also save a note themselves with a `remember` tool, for things you tell
+them that will matter next time.
+
+None of this delays an answer. The lesson is worked out afterwards, in the background, by your utility model (Settings →
+General; Roger's model if you haven't picked one), and only when something happened that could teach a lesson. It is
+asked for short, lasting notes: one-off task details, code and anything that looks like a secret (passwords, keys,
+tokens, card numbers) are never saved. What a learner writes is marked **learned** in the list.
+
+The learner reads a few short excerpts of the exchange (your reply, the answer it was about, and your earlier request),
+so if your utility model is a cloud model, those excerpts are sent to it. Pick a local model there if you don't want that.
+
+You stay in charge. A learner can reword or remove only the notes it wrote itself: never ones you added, edited or
+pinned. Learned notes also expire first when an agent reaches 40 entries. To stop an agent learning on its own, turn off
+**Learn from my corrections** in its Memory section (and press Save) or tell Roger. Saying "remember that…" and the Memory
+list keep working with learning off. Which agent learns is always the one you were talking to; others are untouched.
+
 ## Working together
 
 Coding and long-horizon agents (Rick, Micheal, Jordan, Viktor, Ducky) can hand a task to Robert, Amelia or Luna mid-task

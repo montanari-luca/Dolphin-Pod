@@ -24,4 +24,9 @@ iosModel: ModelRef | null,
  * The user's own description of this agent's voice and character. Layered on top of the built-in
  * specialty text, which carries the working instructions; `None` adds nothing.
  */
-persona: string | null, sort: number, updatedAt: number, };
+persona: string | null, 
+/**
+ * Whether the agent learns from your corrections, reverts and ratings (and may save notes with its `remember` tool).
+ * Saying "remember that..." and the Memory list work either way.
+ */
+learning: boolean, sort: number, updatedAt: number, };

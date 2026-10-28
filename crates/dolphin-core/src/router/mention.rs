@@ -42,6 +42,7 @@ mod tests {
             image_model: None,
             ios_model: None,
             persona: None,
+            learning: true,
             sort: 0,
             updated_at: 0,
         }

@@ -236,6 +236,9 @@ export const useApp = create<State>((set, get) => ({
           set((s) => ({ settings: { ...s.settings, [key]: value } }));
         }
         break;
+      case "memoryLearned":
+        // The list reloads from `memoriesChanged`; the "learned" toast with Undo is Phase 4.
+        break;
       case "memoriesChanged":
         set((s) => ({ memoryVersion: { ...s.memoryVersion, [e.agentId]: (s.memoryVersion[e.agentId] ?? 0) + 1 } }));
         break;

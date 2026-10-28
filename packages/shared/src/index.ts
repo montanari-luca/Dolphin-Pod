@@ -24,6 +24,7 @@ export type { ModelInfo } from "./generated/ModelInfo";
 export type { ModelRef } from "./generated/ModelRef";
 export type { PermissionGrant } from "./generated/PermissionGrant";
 export type { PermissionLevel } from "./generated/PermissionLevel";
+export type { Rating } from "./generated/Rating";
 export type { ShellPolicy } from "./generated/ShellPolicy";
 export type { ChangeKind } from "./generated/ChangeKind";
 export type { FileChange } from "./generated/FileChange";
