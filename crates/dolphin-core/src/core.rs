@@ -18,7 +18,7 @@ use crate::providers::{Provider, ProviderRegistry};
 use crate::secrets::{SecretStore, provider_key_name};
 use crate::settings::{self, SettingChange};
 use crate::util::{new_id, now_ms};
-use crate::{catalog, seed};
+use crate::{catalog, memory, seed};
 
 pub struct Core {
     pub db: Db,
@@ -288,6 +288,79 @@ impl Core {
         let saved = self.db.upsert_agent(&merged)?;
         self.emit(CoreEvent::AgentChanged { agent: saved.clone() });
         Ok(saved)
+    }
+
+    // ---------------------------------------------------------------- agent memory
+
+    pub fn list_agent_memories(&self, agent_id: &str) -> Result<Vec<AgentMemory>> {
+        self.db.get_agent(agent_id)?;
+        self.db.list_memories(agent_id)
+    }
+
+    /// Something the user wants an agent to remember (written by hand in Settings).
+    pub fn add_agent_memory(&self, agent_id: &str, kind: MemoryKind, text: &str, project: Option<&str>) -> Result<AgentMemory> {
+        self.db.get_agent(agent_id)?;
+        let text = Self::memory_text(text)?;
+        if self.db.count_memories(agent_id)? >= memory::MAX_ENTRIES {
+            return Err(CoreError::invalid(format!("this agent already remembers {} things; forget some first", memory::MAX_ENTRIES)));
+        }
+        let saved = self.db.upsert_memory(&AgentMemory {
+            id: new_id(),
+            agent_id: agent_id.to_string(),
+            kind,
+            text,
+            project: memory::clean_project(project),
+            source: MemorySource::Explicit,
+            pinned: false,
+            hits: 0,
+            created_at: 0,
+            updated_at: 0,
+        })?;
+        self.emit(CoreEvent::MemoriesChanged { agent_id: agent_id.to_string() });
+        Ok(saved)
+    }
+
+    /// Change an entry's text, kind, scope or pin. Rewording it (or re-scoping it) marks it as the user's own.
+    pub fn update_agent_memory(&self, m: AgentMemory) -> Result<AgentMemory> {
+        let current = self.db.get_memory(&m.id)?;
+        let text = Self::memory_text(&m.text)?;
+        let project = memory::clean_project(m.project.as_deref());
+        let reworked = text != current.text || m.kind != current.kind || project != current.project;
+        let saved = self.db.upsert_memory(&AgentMemory {
+            text,
+            kind: m.kind,
+            project,
+            pinned: m.pinned,
+            source: if reworked { MemorySource::Edited } else { current.source },
+            ..current
+        })?;
+        self.emit(CoreEvent::MemoriesChanged { agent_id: saved.agent_id.clone() });
+        Ok(saved)
+    }
+
+    pub fn delete_agent_memory(&self, id: &str) -> Result<()> {
+        let current = self.db.get_memory(id)?;
+        self.db.delete_memory(id)?;
+        self.emit(CoreEvent::MemoriesChanged { agent_id: current.agent_id });
+        Ok(())
+    }
+
+    /// Wipe everything one agent remembers. How many entries went.
+    pub fn forget_agent_memories(&self, agent_id: &str) -> Result<usize> {
+        self.db.get_agent(agent_id)?;
+        let n = self.db.forget_memories(agent_id)?;
+        if n > 0 {
+            self.emit(CoreEvent::MemoriesChanged { agent_id: agent_id.to_string() });
+        }
+        Ok(n)
+    }
+
+    fn memory_text(text: &str) -> Result<String> {
+        let text = memory::clean_text(text).ok_or_else(|| CoreError::invalid("write what the agent should remember"))?;
+        if text.chars().count() > memory::MAX_TEXT_CHARS {
+            return Err(CoreError::invalid(format!("a memory is limited to {} characters; keep it to one thought", memory::MAX_TEXT_CHARS)));
+        }
+        Ok(text)
     }
 
     pub(crate) fn agent_by_slug(&self, slug: &str) -> Result<Agent> {

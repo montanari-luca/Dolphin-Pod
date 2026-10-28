@@ -40,4 +40,13 @@ describe("store event handling", () => {
     apply({ type: "messagesRemoved", chatId: "c", messageIds: [], all: true });
     expect(useApp.getState().messages.c).toEqual([]);
   });
+
+  it("counts memory changes per agent so the memory list reloads", () => {
+    const { apply } = useApp.getState();
+    useApp.setState({ memoryVersion: {} });
+    apply({ type: "memoriesChanged", agentId: "rick" });
+    apply({ type: "memoriesChanged", agentId: "rick" });
+    apply({ type: "memoriesChanged", agentId: "roger" });
+    expect(useApp.getState().memoryVersion).toEqual({ rick: 2, roger: 1 });
+  });
 });

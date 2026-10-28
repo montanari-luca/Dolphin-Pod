@@ -78,6 +78,13 @@ pub const KINDS: &[KindDef] = &[
         has_deleted: true,
     },
     KindDef {
+        kind: "agent_memory",
+        table: "agent_memory",
+        keys: &["id"],
+        fields: &["agent_id", "kind", "text", "project", "source", "pinned", "created_at", "deleted"],
+        has_deleted: true,
+    },
+    KindDef {
         kind: "automation",
         table: "automations",
         keys: &["id"],

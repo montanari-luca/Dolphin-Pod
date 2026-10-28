@@ -50,6 +50,8 @@ interface State {
   messages: Record<string, Message[]>;
   settings: Settings;
   usage: Record<string, UsageStats>;
+  /** Bumped whenever an agent's memory changes (here, by its learner or from another device), so lists reload. */
+  memoryVersion: Record<string, number>;
   activity: Record<string, Record<string, Activity>>;
   grants: Record<string, PermissionGrant[]>;
   providers: ProviderConfig[];
@@ -91,6 +93,7 @@ export const useApp = create<State>((set, get) => ({
   messages: {},
   settings: {},
   usage: {},
+  memoryVersion: {},
   activity: {},
   grants: {},
   providers: [],
@@ -232,6 +235,9 @@ export const useApp = create<State>((set, get) => ({
           const { key, value } = e.change;
           set((s) => ({ settings: { ...s.settings, [key]: value } }));
         }
+        break;
+      case "memoriesChanged":
+        set((s) => ({ memoryVersion: { ...s.memoryVersion, [e.agentId]: (s.memoryVersion[e.agentId] ?? 0) + 1 } }));
         break;
       case "usageUpdated":
         set((s) => ({ usage: { ...s.usage, [e.usage.agentId]: e.usage } }));

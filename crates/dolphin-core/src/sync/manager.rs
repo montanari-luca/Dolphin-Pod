@@ -601,6 +601,11 @@ impl Core {
                         self.emit(CoreEvent::AgentChanged { agent });
                     }
                 }
+                "agent_memory" => {
+                    if let Ok(Some(agent_id)) = self.db.memory_agent_id(&a.id) {
+                        self.emit(CoreEvent::MemoriesChanged { agent_id });
+                    }
+                }
                 "role" => {
                     if let Ok(roles) = self.db.list_roles() {
                         self.emit(CoreEvent::RolesChanged { roles });

@@ -3,6 +3,7 @@
 import type {
   Agent,
   AgentColor,
+  AgentMemory,
   Automation,
   Chat,
   CoreEvent,
@@ -20,6 +21,7 @@ import type {
   UsageStats,
   UserRole,
 } from "@dolphin/shared";
+import { MEMORY_MAX_ENTRIES, cleanMemoryText, cleanProject } from "@/lib/memory";
 import type { Backend, Settings } from "./api";
 
 const uid = () => crypto.randomUUID();
@@ -229,6 +231,7 @@ export function mockBackend(): Backend {
     updatedAt: now(),
   }));
   const id = (slug: string) => `a-${slug}`;
+  const memories: AgentMemory[] = [];
   const chats: Chat[] = [
     ["Coding", "code", ["rick", "jordan", "ducky", "viktor", "prof", "robert", "amelia"]],
     [
@@ -429,6 +432,44 @@ export function mockBackend(): Backend {
       agents[i] = { ...a, persona: a.persona?.trim() || null, updatedAt: now() };
       emit({ type: "agentChanged", agent: structuredClone(agents[i]) });
       return structuredClone(agents[i]);
+    },
+    async listAgentMemories(agentId) {
+      return structuredClone(memories.filter((m) => m.agentId === agentId).sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.createdAt - b.createdAt));
+    },
+    async addAgentMemory(agentId, kind, text, project) {
+      const clean = cleanMemoryText(text);
+      if (memories.filter((m) => m.agentId === agentId).length >= MEMORY_MAX_ENTRIES) {
+        throw `this agent already remembers ${MEMORY_MAX_ENTRIES} things; forget some first`;
+      }
+      const m: AgentMemory = {
+        id: uid(), agentId, kind, text: clean, project: cleanProject(project), source: "explicit", pinned: false, hits: 0, createdAt: now(), updatedAt: now(),
+      };
+      memories.push(m);
+      emit({ type: "memoriesChanged", agentId });
+      return structuredClone(m);
+    },
+    async updateAgentMemory(next) {
+      const i = memories.findIndex((m) => m.id === next.id);
+      if (i < 0) throw `memory ${next.id} not found`;
+      const cur = memories[i];
+      const text = cleanMemoryText(next.text);
+      const project = cleanProject(next.project);
+      const reworked = text !== cur.text || next.kind !== cur.kind || project !== cur.project;
+      memories[i] = { ...cur, text, kind: next.kind, project, pinned: next.pinned, source: reworked ? "edited" : cur.source, updatedAt: now() };
+      emit({ type: "memoriesChanged", agentId: cur.agentId });
+      return structuredClone(memories[i]);
+    },
+    async deleteAgentMemory(id) {
+      const i = memories.findIndex((m) => m.id === id);
+      if (i < 0) throw `memory ${id} not found`;
+      const [gone] = memories.splice(i, 1);
+      emit({ type: "memoriesChanged", agentId: gone.agentId });
+    },
+    async forgetAgentMemories(agentId) {
+      const n = memories.filter((m) => m.agentId === agentId).length;
+      for (let i = memories.length - 1; i >= 0; i--) if (memories[i].agentId === agentId) memories.splice(i, 1);
+      if (n > 0) emit({ type: "memoriesChanged", agentId });
+      return n;
     },
     listChats: async () => structuredClone(chats),
     async createChat(name, icon, agentIds) {

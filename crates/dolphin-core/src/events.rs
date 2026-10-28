@@ -50,6 +50,8 @@ pub enum CoreEvent {
     ChatChanged { chat: Chat },
     ChatDeleted { chat_id: String },
     AgentChanged { agent: Agent },
+    /// An agent's memory changed (edited here, by its learner, or synced from another device).
+    MemoriesChanged { agent_id: String },
     RolesChanged { roles: Vec<UserRole> },
     SettingChanged { change: SettingChange },
     UsageUpdated { usage: UsageStats },

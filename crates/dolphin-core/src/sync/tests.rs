@@ -142,7 +142,7 @@ async fn nothing_readable_reaches_the_relay() {
         for needle in ["private chat name", "very secret", "alice", "display_name", "roger", "coding", &chat.id] {
             assert!(!wire.contains(&needle.to_lowercase()), "{needle:?} leaked in {wire}");
         }
-        assert!(["provider", "agent", "chat", "chat_agent", "message", "setting", "role", "usage", "attachment", "automation"].contains(&op.kind.as_str()));
+        assert!(["provider", "agent", "chat", "chat_agent", "message", "setting", "role", "usage", "attachment", "automation", "agent_memory"].contains(&op.kind.as_str()));
     }
     // A device with the wrong key can read none of it.
     let other = device(&backend, &key);
@@ -661,4 +661,60 @@ async fn postgres_over_tls_verifies_the_server_certificate() {
     let bare = url.split("&sslrootcert=").next().unwrap().split("sslrootcert=").next().unwrap().trim_end_matches(['?', '&']).to_string();
     let untrusted = super::postgres::PostgresBackend::new(&bare).unwrap();
     assert!(untrusted.init().await.is_err(), "an unknown CA must not be trusted");
+}
+
+fn memory(agent_id: &str, text: &str) -> crate::model::AgentMemory {
+    crate::model::AgentMemory {
+        id: new_id(),
+        agent_id: agent_id.into(),
+        kind: crate::model::MemoryKind::Style,
+        text: text.into(),
+        project: Some("dolphin-pod".into()),
+        source: crate::model::MemorySource::Auto,
+        pinned: false,
+        hits: 0,
+        created_at: 0,
+        updated_at: 0,
+    }
+}
+
+fn dirty_memories(d: &Device) -> i64 {
+    d.db.conn().query_row("SELECT COUNT(*) FROM sync_dirty WHERE kind = 'agent_memory'", [], |r| r.get(0)).unwrap()
+}
+
+#[tokio::test]
+async fn an_agents_memory_follows_it_to_the_other_device_but_using_it_is_not_an_edit() {
+    let (backend, key) = pod();
+    let a = device(&backend, &key);
+    let b = device(&backend, &key);
+    a.engine.create().await.unwrap();
+    b.engine.join().await.unwrap();
+    let rick = agent(&a, "rick");
+
+    let m = a.db.upsert_memory(&memory(&rick.id, "No emojis, ever")).unwrap();
+    settle(&[&a, &b]).await;
+    let got = b.db.get_memory(&m.id).unwrap();
+    assert_eq!((got.text.as_str(), got.project.as_deref(), got.agent_id.as_str()), ("No emojis, ever", Some("dolphin-pod"), rick.id.as_str()));
+    assert_eq!(snapshot(&a), snapshot(&b));
+
+    // Sending a memory with a request only counts a hit on this device; nothing to sync.
+    assert_eq!(dirty_memories(&a), 0);
+    a.db.bump_memory_hits(std::slice::from_ref(&m.id)).unwrap();
+    assert_eq!(dirty_memories(&a), 0, "a hit is local");
+    assert_eq!(a.db.get_memory(&m.id).unwrap().hits, 1);
+    assert_eq!(b.db.get_memory(&m.id).unwrap().hits, 0);
+
+    // Editing it is a change.
+    let mut edited = a.db.get_memory(&m.id).unwrap();
+    edited.text = "No emojis, ever. Plain text only".into();
+    a.db.upsert_memory(&edited).unwrap();
+    assert_eq!(dirty_memories(&a), 1);
+    settle(&[&a, &b]).await;
+    assert_eq!(b.db.get_memory(&m.id).unwrap().text, "No emojis, ever. Plain text only");
+
+    // Forgetting it on the other device removes it here.
+    assert!(b.db.delete_memory(&m.id).unwrap());
+    settle(&[&a, &b]).await;
+    assert!(a.db.list_memories(&rick.id).unwrap().is_empty());
+    assert_eq!(snapshot(&a), snapshot(&b));
 }

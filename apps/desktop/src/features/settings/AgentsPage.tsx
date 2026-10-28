@@ -9,6 +9,7 @@ import { errorText } from "@/ipc/api";
 import { cn } from "@/lib/cn";
 import { formatDuration, formatTokens } from "@/lib/format";
 import { useApp } from "@/store/app";
+import { AgentMemoryPanel } from "./AgentMemory";
 import { PageHeader } from "./SettingsView";
 
 /** Matches the core limit (settings::PERSONA_MAX_CHARS). */
@@ -122,6 +123,8 @@ function AgentEditor({ agent }: { agent: Agent }) {
           onChange={(e) => setDraft({ ...draft, persona: e.target.value.trim() ? e.target.value : null })}
         />
       </Field>
+
+      <AgentMemoryPanel agent={agent} />
 
       <Field label="Color">
         <GradientEditor value={draft.color} onChange={(color) => setDraft({ ...draft, color })} />

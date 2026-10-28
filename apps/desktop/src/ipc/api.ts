@@ -3,11 +3,13 @@
 import type {
   ActionLogEntry,
   Agent,
+  AgentMemory,
   Attachment,
   Automation,
   Chat,
   CoreEvent,
   DeviceInfo,
+  MemoryKind,
   Message,
   ModelInfo,
   PermissionGrant,
@@ -41,6 +43,12 @@ export interface Backend {
   subscribe(onEvent: (e: CoreEvent) => void): Promise<void>;
   listAgents(): Promise<Agent[]>;
   updateAgent(agent: Agent): Promise<Agent>;
+  listAgentMemories(agentId: string): Promise<AgentMemory[]>;
+  addAgentMemory(agentId: string, kind: MemoryKind, text: string, project: string | null): Promise<AgentMemory>;
+  updateAgentMemory(memory: AgentMemory): Promise<AgentMemory>;
+  deleteAgentMemory(id: string): Promise<void>;
+  /** Wipe everything one agent remembers. How many entries went. */
+  forgetAgentMemories(agentId: string): Promise<number>;
   listChats(): Promise<Chat[]>;
   createChat(name: string, icon: string, agentIds: string[]): Promise<Chat>;
   updateChat(chat: Chat): Promise<Chat>;

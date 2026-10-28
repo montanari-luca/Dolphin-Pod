@@ -79,6 +79,24 @@ pub fn select_by_keywords(chunks: &[Chunk], query: &str, max: usize) -> Vec<Stri
     picked.into_iter().map(|c| c.text.clone()).collect()
 }
 
+/// Selection among ready-made entries that are already one thought each (nothing to split): the flagged ones
+/// always, then up to `max` of the others sharing the most keywords with the request. Indexes, in order.
+pub fn pick(items: &[(&str, bool)], query: &str, max: usize) -> Vec<usize> {
+    let q = keywords(query);
+    let mut scored: Vec<(usize, usize)> = items
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, always))| !always)
+        .map(|(i, (text, _))| (keywords(text).intersection(&q).count(), i))
+        .filter(|(score, _)| *score > 0)
+        .collect();
+    scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    let mut out: Vec<usize> = items.iter().enumerate().filter(|(_, (_, always))| *always).map(|(i, _)| i).collect();
+    out.extend(scored.into_iter().take(max).map(|(_, i)| i));
+    out.sort_unstable();
+    out
+}
+
 #[derive(Deserialize)]
 struct Ids {
     ids: Vec<usize>,
@@ -139,6 +157,14 @@ mod tests {
         let story = select_by_keywords(&c, "Write me stories about dragons", 3);
         assert!(story.iter().any(|p| p.contains("500 words")));
         assert!(!story.iter().any(|p| p.contains("Java")));
+    }
+
+    #[test]
+    fn pick_keeps_flagged_entries_and_the_best_matches() {
+        let items = [("Keep answers short", true), ("Uses PostgreSQL and Docker", false), ("Owns a cat called Miso", false)];
+        assert_eq!(pick(&items, "set up a PostgreSQL container", 1), vec![0, 1]);
+        assert_eq!(pick(&items, "what should I cook tonight", 1), vec![0], "nothing relevant: only the flagged one");
+        assert_eq!(pick(&items, "postgresql docker cat miso", 1), vec![0, 1], "max limits the picked ones, not the flagged ones");
     }
 
     #[tokio::test]

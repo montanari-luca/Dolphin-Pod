@@ -13,6 +13,7 @@ mod engine;
 pub mod error;
 pub mod events;
 pub mod gittool;
+pub mod memory;
 pub mod model;
 pub mod permissions;
 pub mod preferences;

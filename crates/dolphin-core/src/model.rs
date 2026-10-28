@@ -304,6 +304,57 @@ pub struct Agent {
     pub updated_at: i64,
 }
 
+/// What a memory is about. `Style` and `Avoid` are small standing rules and always reach the agent;
+/// `Fact` and `Workflow` are picked by relevance to the request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum MemoryKind {
+    /// How to sound and present: terse, no emojis, British English.
+    Style,
+    /// Something true about the user or their setup.
+    Fact,
+    /// How the user likes work done: run the tests first, small commits.
+    Workflow,
+    /// Something not to do again.
+    Avoid,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum MemorySource {
+    /// Written by the agent's learner.
+    Auto,
+    /// The user asked for it ("remember that...") or added it themselves.
+    Explicit,
+    /// An entry the user changed after it was written.
+    Edited,
+}
+
+/// One thing an agent remembers about the user. Belongs to one agent and is never shown to the others.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AgentMemory {
+    pub id: Id,
+    pub agent_id: Id,
+    pub kind: MemoryKind,
+    pub text: String,
+    /// Workspace folder name this only applies to; `None` applies everywhere.
+    pub project: Option<String>,
+    pub source: MemorySource,
+    /// Pinned entries always reach the agent and are never expired.
+    pub pinned: bool,
+    /// How many requests this entry was sent with, on this device.
+    #[ts(type = "number")]
+    pub hits: i64,
+    #[ts(type = "number")]
+    pub created_at: i64,
+    #[ts(type = "number")]
+    pub updated_at: i64,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]

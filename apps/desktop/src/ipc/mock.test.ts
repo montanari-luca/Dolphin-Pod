@@ -1,0 +1,38 @@
+import { describe, expect, it } from "vitest";
+import type { CoreEvent } from "@dolphin/shared";
+import { MEMORY_MAX_ENTRIES } from "@/lib/memory";
+import { mockBackend } from "./mock";
+
+// The mock stands in for the Rust core in the browser, so it has to follow the same memory rules.
+describe("mock agent memory", () => {
+  it("adds, edits, pins and forgets, telling the UI each time", async () => {
+    const api = mockBackend();
+    const events: CoreEvent[] = [];
+    await api.subscribe((e) => events.push(e));
+    const [rick, roger] = (await api.listAgents()).filter((a) => ["rick", "roger"].includes(a.slug));
+
+    const m = await api.addAgentMemory(rick.id, "avoid", "  Don't rewrite\n the whole file ", "  ");
+    expect([m.text, m.project, m.source, m.pinned]).toEqual(["Don't rewrite the whole file", null, "explicit", false]);
+
+    const pinned = await api.updateAgentMemory({ ...m, pinned: true });
+    expect(pinned.source).toBe("explicit");
+    const reworded = await api.updateAgentMemory({ ...pinned, text: "Don't rewrite whole files", project: "api" });
+    expect([reworded.source, reworded.project]).toEqual(["edited", "api"]);
+
+    await expect(api.addAgentMemory(rick.id, "fact", "   ", null)).rejects.toMatch(/what the agent should remember/);
+    await api.addAgentMemory(roger.id, "fact", "Roger's own", null);
+    expect(await api.listAgentMemories(rick.id)).toHaveLength(1);
+
+    expect(await api.forgetAgentMemories(rick.id)).toBe(1);
+    expect(await api.listAgentMemories(rick.id)).toEqual([]);
+    expect(await api.listAgentMemories(roger.id)).toHaveLength(1);
+    expect(events.filter((e) => e.type === "memoriesChanged" && e.agentId === rick.id)).toHaveLength(4);
+  });
+
+  it("stops at the per-agent cap", async () => {
+    const api = mockBackend();
+    const [rick] = await api.listAgents();
+    for (let i = 0; i < MEMORY_MAX_ENTRIES; i++) await api.addAgentMemory(rick.id, "fact", `fact ${i}`, null);
+    await expect(api.addAgentMemory(rick.id, "fact", "one too many", null)).rejects.toMatch(/forget some first/);
+  });
+});

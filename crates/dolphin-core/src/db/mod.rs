@@ -2,6 +2,7 @@
 
 mod agents;
 mod chats;
+mod memory;
 mod messages;
 mod misc;
 mod providers;
@@ -26,6 +27,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migration_0004_remote.sql"),
     include_str!("migration_0005_shell_policy.sql"),
     include_str!("migration_0006_persona.sql"),
+    include_str!("migration_0007_agent_memory.sql"),
 ];
 
 #[derive(Clone)]

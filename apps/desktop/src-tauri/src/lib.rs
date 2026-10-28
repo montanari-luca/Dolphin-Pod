@@ -71,6 +71,31 @@ fn update_agent(core: State<CoreRef>, agent: Agent) -> Res<Agent> {
 }
 
 #[tauri::command]
+fn list_agent_memories(core: State<CoreRef>, agent_id: String) -> Res<Vec<AgentMemory>> {
+    core.list_agent_memories(&agent_id)
+}
+
+#[tauri::command]
+fn add_agent_memory(core: State<CoreRef>, agent_id: String, kind: MemoryKind, text: String, project: Option<String>) -> Res<AgentMemory> {
+    core.add_agent_memory(&agent_id, kind, &text, project.as_deref())
+}
+
+#[tauri::command]
+fn update_agent_memory(core: State<CoreRef>, memory: AgentMemory) -> Res<AgentMemory> {
+    core.update_agent_memory(memory)
+}
+
+#[tauri::command]
+fn delete_agent_memory(core: State<CoreRef>, id: String) -> Res<()> {
+    core.delete_agent_memory(&id)
+}
+
+#[tauri::command]
+fn forget_agent_memories(core: State<CoreRef>, agent_id: String) -> Res<usize> {
+    core.forget_agent_memories(&agent_id)
+}
+
+#[tauri::command]
 fn list_chats(core: State<CoreRef>) -> Res<Vec<Chat>> {
     core.list_chats()
 }
@@ -438,6 +463,11 @@ pub fn run() {
             subscribe,
             list_agents,
             update_agent,
+            list_agent_memories,
+            add_agent_memory,
+            update_agent_memory,
+            delete_agent_memory,
+            forget_agent_memories,
             list_chats,
             create_chat,
             update_chat,

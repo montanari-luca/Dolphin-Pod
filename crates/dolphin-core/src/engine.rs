@@ -436,6 +436,18 @@ impl Core {
         crate::preferences::select(utility.as_ref().map(|(p, r)| (p.as_ref(), r.clone())), &text, query).await
     }
 
+    /// What this agent remembers about the user that applies to this request, ready to send after the history.
+    /// Counting the entries as used is best effort: a failure here must never stop a run.
+    fn memory_message(&self, agent: &Agent, chat: &Chat, query: &str) -> Option<String> {
+        let all = self.db.list_memories(&agent.id).ok()?;
+        let project = crate::memory::project_of(chat.workspace_path.as_deref());
+        let picked = crate::memory::select(&all, project.as_deref(), query);
+        let text = crate::memory::block(&picked)?;
+        let ids: Vec<String> = picked.iter().map(|m| m.id.clone()).collect();
+        let _ = self.db.bump_memory_hits(&ids);
+        Some(text)
+    }
+
     fn author_name(&self, agents: &[Agent], m: &Message) -> String {
         match &m.agent_id {
             None => {
@@ -589,6 +601,10 @@ impl Core {
         if !turn.prefs.is_empty() {
             let list: String = turn.prefs.iter().map(|p| format!("- {}\n", p.trim())).collect();
             messages.push(ChatMessage::user(format!("The user's preferences that apply to this request:\n{list}")));
+            volatile += 1;
+        }
+        if let Some(m) = self.memory_message(agent, &turn.chat, &turn.user_msg.content) {
+            messages.push(ChatMessage::user(m));
             volatile += 1;
         }
         let mut run_start = messages.len();
