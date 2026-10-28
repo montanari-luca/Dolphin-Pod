@@ -96,6 +96,7 @@ pub mod keys {
     pub const CONTEXT_LOCAL_WINDOW: &str = "context.local_window";
     pub const PASTE_THRESHOLD: &str = "chat.paste_threshold";
     pub const SHOW_BRIEFS: &str = "routing.show_briefs";
+    pub const COUNCIL_ENABLED: &str = "council.enabled";
     pub const WEB_ACCESS: &str = "web.access";
     pub const TAINT_GUARD: &str = "safety.taint_guard";
     pub const ONBOARDED: &str = "app.onboarded";
@@ -156,6 +157,7 @@ pub fn registry() -> Vec<SettingDef> {
         def(keys::PASTE_THRESHOLD, "Long paste threshold (characters)", "Pasted text longer than this becomes a .txt attachment.", Global,
             Int { min: 500, max: 200_000 }, json!(6000)),
         def(keys::SHOW_BRIEFS, "Show orchestration briefs", "Show Lincoln's brief and the routing decision on agent messages.", Global, Bool, json!(true)),
+        def(keys::COUNCIL_ENABLED, "DP Council reviews big tasks", "Before a coding, agentic, documentation or research agent starts a big task (or after its draft, for plans), DP Council criticizes the approach once on the strongest model. Turn it off to save time and tokens.", Global, Bool, json!(true)),
         def(keys::WEB_ACCESS, "Web access for agents", "Let agents search the web and open public pages to answer with current information.", Global, Bool, json!(true)),
         def(keys::TAINT_GUARD, "Ask before acting after reading the web", "Once an agent has read a web page or search result in a run, every file change, command and git write in that run waits for your approval, even with full permissions, and automations refuse them. A page can hide instructions aimed at the agent; this keeps it from acting on them unseen.", Global, Bool, json!(true)).sensitive(),
         def(keys::ONBOARDED, "Onboarding finished", "Internal.", Global, Bool, json!(false)),

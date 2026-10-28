@@ -72,6 +72,8 @@ fn pod(script: Script) -> Pod {
             core.update_agent(a).unwrap();
         }
     }
+    // These tests are about other things; the council has its own tests in council.rs.
+    core.set_setting("council.enabled", None, json!(false)).unwrap();
     Pod { core, provider, _dir: dir }
 }
 

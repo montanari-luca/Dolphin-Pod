@@ -1,4 +1,4 @@
-//! First-run defaults: the fourteen default agents and five default chats.
+//! First-run defaults: the fifteen default agents and five default chats.
 //! Agents are ordinary records, so custom agents can be added later without a migration.
 
 use crate::db::Db;
@@ -128,10 +128,19 @@ pub const AGENTS: &[AgentSeed] = &[
         job: "Git manager. Tracks history and handles status, commit, push, pull and fetch, usually on behalf of the coding agents. Asks you before anything that touches a remote or rewrites history.",
         color: || AgentColor::gradient(135.0, &[("#ea580c", 0.0), ("#f59e0b", 100.0)]),
     },
+    AgentSeed {
+        slug: "council",
+        name: "DP Council",
+        role: AgentRole::Specialist,
+        specialty: "council",
+        job: "Council. Runs on the strongest model in the pod and criticizes the other agents' approach once, before they work on big tasks (or on their draft, for plans): what is solid, what is risky or missing, and what to do instead. Then it steps out.",
+        color: || AgentColor::gradient(135.0, &[("#facc15", 0.0), ("#a16207", 100.0)]),
+    },
 ];
 
 /// Slugs added after the first release. Existing pods get them once, through `seed_new_agents_if_needed`.
 const AGENTS_V2: &[&str] = &["ruby", "amelia", "luna", "robert"];
+const AGENTS_V3: &[&str] = &["council"];
 
 pub struct ChatSeed {
     pub name: &'static str,
@@ -142,13 +151,13 @@ pub struct ChatSeed {
 
 pub const CHATS: &[ChatSeed] = &[
     // Prof is in Coding too, so "how do I write X in Java" can go to him (the learning flow).
-    ChatSeed { name: "Coding", icon: "code", agents: &["rick", "jordan", "ducky", "viktor", "prof", "robert", "amelia"] },
+    ChatSeed { name: "Coding", icon: "code", agents: &["rick", "jordan", "ducky", "viktor", "prof", "robert", "amelia", "council"] },
     ChatSeed {
         name: "General",
         icon: "message-circle",
-        agents: &["rick", "micheal", "viktor", "jordan", "emma", "ducky", "sarah", "prof", "ruby", "amelia", "luna", "robert"],
+        agents: &["rick", "micheal", "viktor", "jordan", "emma", "ducky", "sarah", "prof", "ruby", "amelia", "luna", "robert", "council"],
     },
-    ChatSeed { name: "Long Horizon Agentic", icon: "rocket", agents: &["micheal", "rick", "jordan", "robert", "amelia", "luna"] },
+    ChatSeed { name: "Long Horizon Agentic", icon: "rocket", agents: &["micheal", "rick", "jordan", "robert", "amelia", "luna", "council"] },
     ChatSeed { name: "Learning", icon: "graduation-cap", agents: &["prof", "ducky", "ruby", "luna"] },
     ChatSeed { name: "Creative", icon: "palette", agents: &["emma", "sarah", "ruby"] },
 ];
@@ -184,7 +193,7 @@ pub fn seed_if_needed(db: &Db) -> Result<bool> {
             image_model: None,
             ios_model: None,
             persona: None,
-            learning: true,
+            learning: s.specialty != "council",
             sort: i as i32,
             updated_at: now,
         };
@@ -208,59 +217,69 @@ pub fn seed_if_needed(db: &Db) -> Result<bool> {
         })?;
     }
     db.meta_set("seeded", "1")?;
-    db.meta_set(V2_FLAG, "1")?;
+    for (flag, _) in UPGRADES {
+        db.meta_set(flag, "1")?;
+    }
     Ok(true)
 }
 
 const V2_FLAG: &str = "agents_v2_seeded";
+const V3_FLAG: &str = "agents_v3_seeded";
 
-/// Pods seeded before Ruby, Amelia, Luna and Robert existed get them once: the agents are added with their
-/// stable ids (so devices that upgrade separately converge through sync) and appended to the default chats.
+/// Each batch of agents added after the first release, with the meta flag that records it was handed out.
+const UPGRADES: &[(&str, &[&str])] = &[(V2_FLAG, AGENTS_V2), (V3_FLAG, AGENTS_V3)];
+
+/// Pods seeded before an agent existed get it once: the agents are added with their stable ids (so devices
+/// that upgrade separately converge through sync) and appended to the default chats that list them.
 /// Chats are only extended, never re-seeded, so the user's edits survive; an agent deleted afterwards stays deleted.
 pub fn seed_new_agents_if_needed(db: &Db) -> Result<bool> {
-    if db.meta_get(V2_FLAG)?.is_some() {
-        return Ok(false);
-    }
-    let first = AGENTS.len() - AGENTS_V2.len();
-    let mut added = Vec::new();
-    for (i, s) in AGENTS.iter().enumerate().skip(first) {
-        let id = agent_seed_id(s.slug);
-        if db.agent_row_exists(&id, s.slug)? {
+    let mut any = false;
+    for (flag, slugs) in UPGRADES {
+        if db.meta_get(flag)?.is_some() {
             continue;
         }
-        db.upsert_agent(&Agent {
-            id: id.clone(),
-            slug: s.slug.into(),
-            name: s.name.into(),
-            role: s.role,
-            specialty: s.specialty.into(),
-            job: s.job.into(),
-            color: (s.color)(),
-            model: None,
-            image_model: None,
-            ios_model: None,
-            persona: None,
-            learning: true,
-            sort: i as i32,
-            updated_at: now_ms(),
-        })?;
-        added.push(s.slug);
-    }
-    for c in CHATS {
-        let Ok(mut chat) = db.get_chat(&chat_seed_id(c.name)) else { continue };
-        let before = chat.agent_ids.len();
-        for slug in c.agents.iter().filter(|s| added.contains(s)) {
-            let id = agent_seed_id(slug);
-            if !chat.agent_ids.contains(&id) {
-                chat.agent_ids.push(id);
+        let mut added = Vec::new();
+        for (i, s) in AGENTS.iter().enumerate().filter(|(_, s)| slugs.contains(&s.slug)) {
+            let id = agent_seed_id(s.slug);
+            if db.agent_row_exists(&id, s.slug)? {
+                continue;
+            }
+            db.upsert_agent(&Agent {
+                id: id.clone(),
+                slug: s.slug.into(),
+                name: s.name.into(),
+                role: s.role,
+                specialty: s.specialty.into(),
+                job: s.job.into(),
+                color: (s.color)(),
+                model: None,
+                image_model: None,
+                ios_model: None,
+                persona: None,
+                // The council never takes notes about the user: it criticizes work, it does not learn habits.
+                learning: s.specialty != "council",
+                sort: i as i32,
+                updated_at: now_ms(),
+            })?;
+            added.push(s.slug);
+        }
+        for c in CHATS {
+            let Ok(mut chat) = db.get_chat(&chat_seed_id(c.name)) else { continue };
+            let before = chat.agent_ids.len();
+            for slug in c.agents.iter().filter(|s| added.contains(s)) {
+                let id = agent_seed_id(slug);
+                if !chat.agent_ids.contains(&id) {
+                    chat.agent_ids.push(id);
+                }
+            }
+            if chat.agent_ids.len() != before {
+                db.upsert_chat(&chat)?;
             }
         }
-        if chat.agent_ids.len() != before {
-            db.upsert_chat(&chat)?;
-        }
+        db.meta_set(flag, "1")?;
+        any |= !added.is_empty();
     }
-    db.meta_set(V2_FLAG, "1")?;
-    Ok(!added.is_empty())
+    Ok(any)
 }
 
 /// Databases seeded before ids were stable have random ids for the default agents, chats and role.
@@ -337,7 +356,7 @@ mod tests {
         assert!(seed_if_needed(&db).unwrap());
         assert!(!seed_if_needed(&db).unwrap());
         let agents = db.list_agents().unwrap();
-        assert_eq!(agents.len(), 14);
+        assert_eq!(agents.len(), 15);
         let roger = db.agent_by_slug("roger").unwrap();
         let lincoln = db.agent_by_slug("lincoln").unwrap();
         let chats = db.list_chats().unwrap();
@@ -346,19 +365,21 @@ mod tests {
             assert!(c.agent_ids.contains(&roger.id) && c.agent_ids.contains(&lincoln.id), "{}", c.name);
         }
         let general = chats.iter().find(|c| c.name == "General").unwrap();
-        assert_eq!(general.agent_ids.len(), 14);
+        assert_eq!(general.agent_ids.len(), 15);
     }
 
     /// Simulates a pod seeded by the first release: no v2 agents, default chats without them.
     fn old_pod() -> Db {
         let db = Db::open_in_memory().unwrap();
         seed_if_needed(&db).unwrap();
-        for slug in AGENTS_V2 {
+        for slug in AGENTS_V2.iter().chain(AGENTS_V3) {
             let id = agent_seed_id(slug);
             db.conn().execute("DELETE FROM chat_agents WHERE agent_id = ?1", [&id]).unwrap();
             db.conn().execute("DELETE FROM agents WHERE id = ?1", [&id]).unwrap();
         }
-        db.conn().execute("DELETE FROM meta WHERE key = ?1", [V2_FLAG]).unwrap();
+        for flag in [V2_FLAG, V3_FLAG] {
+            db.conn().execute("DELETE FROM meta WHERE key = ?1", [flag]).unwrap();
+        }
         db
     }
 
@@ -372,19 +393,36 @@ mod tests {
         db.upsert_chat(&general).unwrap();
 
         assert!(seed_new_agents_if_needed(&db).unwrap());
-        assert_eq!(db.list_agents().unwrap().len(), 14);
+        assert_eq!(db.list_agents().unwrap().len(), 15);
         let general = db.get_chat(&general_id).unwrap();
-        assert_eq!(general.agent_ids.len(), 14);
+        assert_eq!(general.agent_ids.len(), 15);
         assert_eq!(general.workspace_path.as_deref(), Some("/work"), "chat edits survive");
         let coding = db.get_chat(&chat_seed_id("Coding")).unwrap();
         assert!(coding.agent_ids.contains(&agent_seed_id("robert")) && coding.agent_ids.contains(&agent_seed_id("amelia")));
         assert!(!coding.agent_ids.contains(&agent_seed_id("ruby")));
+        assert!(coding.agent_ids.contains(&agent_seed_id("council")));
+        assert!(!db.get_chat(&chat_seed_id("Creative")).unwrap().agent_ids.contains(&agent_seed_id("council")));
+        let council = db.agent_by_slug("council").unwrap();
+        assert!(!council.learning, "the council does not take notes about the user");
 
         // Second run is a no-op, and a deleted agent stays deleted.
         assert!(!seed_new_agents_if_needed(&db).unwrap());
         db.conn().execute("UPDATE agents SET deleted = 1 WHERE slug = 'ruby'", []).unwrap();
         assert!(!seed_new_agents_if_needed(&db).unwrap());
-        assert_eq!(db.list_agents().unwrap().len(), 13);
+        assert_eq!(db.list_agents().unwrap().len(), 14);
+    }
+
+    #[test]
+    fn a_pod_that_only_lacks_the_council_gets_just_the_council() {
+        let db = old_pod();
+        seed_new_agents_if_needed(&db).unwrap();
+        db.conn().execute("DELETE FROM chat_agents WHERE agent_id = ?1", [agent_seed_id("council")]).unwrap();
+        db.conn().execute("DELETE FROM agents WHERE slug = 'council'", []).unwrap();
+        db.conn().execute("DELETE FROM meta WHERE key = ?1", [V3_FLAG]).unwrap();
+        assert_eq!(db.list_agents().unwrap().len(), 14);
+        assert!(seed_new_agents_if_needed(&db).unwrap());
+        assert_eq!(db.list_agents().unwrap().len(), 15);
+        assert!(db.get_chat(&chat_seed_id("Long Horizon Agentic")).unwrap().agent_ids.contains(&agent_seed_id("council")));
     }
 
     #[test]
@@ -392,7 +430,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         seed_if_needed(&db).unwrap();
         assert!(!seed_new_agents_if_needed(&db).unwrap());
-        assert_eq!(db.list_agents().unwrap().len(), 14);
+        assert_eq!(db.list_agents().unwrap().len(), 15);
     }
 
     #[test]

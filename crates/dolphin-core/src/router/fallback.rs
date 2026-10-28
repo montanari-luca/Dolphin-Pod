@@ -50,7 +50,7 @@ pub fn route(text: &str, chat_agents: &[Agent], prefers_quick: bool) -> Decision
     if has(&t, INTERNAL) {
         return Decision { mode: Mode::Internal, intent: "settings or housekeeping".into(), ..Decision::default() };
     }
-    let specialists: Vec<&Agent> = chat_agents.iter().filter(|a| a.role == AgentRole::Specialist).collect();
+    let specialists: Vec<&Agent> = chat_agents.iter().filter(|a| a.role == AgentRole::Specialist && a.specialty != "council").collect();
     let padded = format!("{t} ");
     let mode = if has(&padded, PLAN) {
         Mode::Plan

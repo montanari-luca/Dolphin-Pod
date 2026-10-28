@@ -30,11 +30,16 @@ pub struct ModeratorInput<'a> {
     pub pending_plan_by: Option<&'a str>,
 }
 
+/// The council reviews work on its own when a task starts; it is never someone to route a request to.
+pub fn is_council(a: &Agent) -> bool {
+    a.specialty == "council"
+}
+
 pub fn system_prompt(i: &ModeratorInput, roger: &str) -> String {
     let roster: Vec<String> = i
         .members
         .iter()
-        .filter(|a| a.role == AgentRole::Specialist)
+        .filter(|a| a.role == AgentRole::Specialist && !is_council(a))
         .map(|a| format!("- {} [{}]: {}", a.name, a.specialty, first_sentence(&a.job)))
         .collect();
     let prefs = if i.preferences.is_empty() { "(none)".to_string() } else { i.preferences.join("\n") };
@@ -119,7 +124,7 @@ pub fn prefers_quick(preferences: &[String]) -> bool {
 pub fn parse_decision(reply: &str, members: &[Agent], user_text: &str, preferences: &[String]) -> Option<Decision> {
     let raw: RawDecision = serde_json::from_str(extract_json_object(reply)?).ok()?;
     let mut mode = parse_mode(raw.mode.as_deref()?)?;
-    let specialists: Vec<&Agent> = members.iter().filter(|a| a.role == AgentRole::Specialist).collect();
+    let specialists: Vec<&Agent> = members.iter().filter(|a| a.role == AgentRole::Specialist && !is_council(a)).collect();
     let mut targets: Vec<String> = Vec::new();
     for t in &raw.targets {
         let t = t.trim().trim_start_matches('@').to_lowercase();

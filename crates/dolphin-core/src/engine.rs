@@ -23,6 +23,7 @@ use crate::tools;
 use crate::util::{now_ms, truncate};
 
 mod changes;
+mod council;
 mod ctx;
 mod delegate;
 mod git;
@@ -54,11 +55,13 @@ struct AgentTask {
     level_override: Option<PermissionLevel>,
     /// Set for a nested run: the name of the delegating agent. Delegates cannot delegate further.
     delegated_by: Option<String>,
+    /// Run on this model instead of the agent's own (the council, when it has none of its own).
+    model_override: Option<ModelRef>,
 }
 
 impl AgentTask {
     fn new(mode: Mode, brief: Option<String>, plan: bool, routing: Value) -> Self {
-        Self { mode, brief, plan, routing, level_override: None, delegated_by: None }
+        Self { mode, brief, plan, routing, level_override: None, delegated_by: None, model_override: None }
     }
 }
 
@@ -230,6 +233,7 @@ impl Core {
             turn.user_msg.mentions.iter().filter_map(|id| turn.all_agents.iter().find(|a| &a.id == id).cloned()).collect();
         let mentioned: Vec<Agent> = mentioned.into_iter().filter(|a| a.id != lincoln.id).collect();
         if !mentioned.is_empty() {
+            let mut council = council::CouncilState::default();
             for agent in mentioned {
                 if !turn.chat.agent_ids.contains(&agent.id) {
                     self.post(&turn.chat.id, &roger.id, MessageKind::Notice,
@@ -238,7 +242,7 @@ impl Core {
                 }
                 let mode = if agent.id == roger.id { Mode::Answer } else { Mode::Implement };
                 let task = AgentTask::new(mode, None, false, json!({ "via": "mention" }));
-                self.run_agent(&turn, &agent, task).await?;
+                self.run_specialist(&turn, &agent, task, &mut council).await?;
             }
             return Ok(());
         }
@@ -327,6 +331,7 @@ impl Core {
     async fn dispatch(self: &Arc<Self>, turn: &Turn, d: &Decision, mode: Mode, lincoln: &Agent, roger: &Agent) -> Result<()> {
         let targets: Vec<Agent> = d.targets.iter().filter_map(|id| turn.members.iter().find(|a| &a.id == id).cloned()).collect();
         let lincoln_model = self.model_handle(lincoln, false).or_else(|_| self.model_handle(roger, false)).ok();
+        let mut council = council::CouncilState::default();
         for agent in &targets {
             if turn.token.is_cancelled() {
                 return Err(CoreError::Cancelled);
@@ -353,7 +358,7 @@ impl Core {
                 mode == Mode::Plan,
                 json!({ "via": "lincoln", "mode": mode.as_str(), "rewrite": d.rewrite, "brief": brief_text }),
             );
-            self.run_agent(turn, agent, task).await?;
+            self.run_specialist(turn, agent, task, &mut council).await?;
         }
         Ok(())
     }
@@ -485,6 +490,10 @@ impl Core {
         if task.plan {
             msg.meta["plan"] = json!({ "approved": false });
         }
+        // The council's critique and the draft it reviews are labelled even when briefs are hidden.
+        if let Some(c) = task.routing.get("council") {
+            msg.meta["council"] = c.clone();
+        }
         self.insert_message(&msg)?;
         self.activity(&turn.chat.id, &agent.id, AgentActivity::Thinking, None);
 
@@ -533,7 +542,7 @@ impl Core {
     }
 
     async fn run_agent_inner(self: &Arc<Self>, turn: &Turn, agent: &Agent, task: &AgentTask, msg: &mut Message, stats: &mut RunStats) -> Result<()> {
-        let model = self.model_for(agent).ok_or_else(|| CoreError::invalid(self.no_model_reason(agent)))?;
+        let model = task.model_override.clone().or_else(|| self.model_for(agent)).ok_or_else(|| CoreError::invalid(self.no_model_reason(agent)))?;
         let (cfg, provider) = self.provider(&model.provider_id)?;
         let workspace = turn.chat.workspace_path.clone().filter(|p| std::path::Path::new(p).is_dir());
         let level = match task.level_override {
