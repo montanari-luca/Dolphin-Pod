@@ -248,11 +248,42 @@ fn parse_ddg(html: &str) -> Vec<Hit> {
 
 fn blocked_ip(ip: IpAddr) -> bool {
     match ip {
-        IpAddr::V4(v) => v.is_loopback() || v.is_private() || v.is_link_local() || v.is_unspecified() || v.is_broadcast(),
+        IpAddr::V4(v) => blocked_v4(v),
         IpAddr::V6(v) => {
-            v.is_loopback() || v.is_unspecified() || (v.segments()[0] & 0xfe00) == 0xfc00 || (v.segments()[0] & 0xffc0) == 0xfe80
+            let g = v.segments();
+            // IPv4 hidden inside an IPv6 address: ::ffff:a.b.c.d, NAT64 (64:ff9b::/96) and 6to4 (2002::/16).
+            let embedded = v.to_ipv4_mapped().or_else(|| {
+                if g[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
+                    Some(std::net::Ipv4Addr::new((g[6] >> 8) as u8, g[6] as u8, (g[7] >> 8) as u8, g[7] as u8))
+                } else if g[0] == 0x2002 {
+                    Some(std::net::Ipv4Addr::new((g[1] >> 8) as u8, g[1] as u8, (g[2] >> 8) as u8, g[2] as u8))
+                } else {
+                    None
+                }
+            });
+            embedded.is_some_and(blocked_v4)
+                || v.is_loopback()
+                || v.is_unspecified()
+                || v.is_multicast()
+                || (g[0] & 0xfe00) == 0xfc00
+                || (g[0] & 0xffc0) == 0xfe80
         }
     }
+}
+
+fn blocked_v4(v: std::net::Ipv4Addr) -> bool {
+    let o = v.octets();
+    v.is_loopback()
+        || v.is_private()
+        || v.is_link_local()
+        || v.is_unspecified()
+        || v.is_broadcast()
+        || v.is_multicast()
+        || o[0] == 0
+        || (o[0] == 100 && o[1] & 0xc0 == 64) // 100.64.0.0/10, carrier-grade NAT
+        || (o[0] == 192 && o[1] == 0 && o[2] == 0) // 192.0.0.0/24
+        || (o[0] == 198 && o[1] & 0xfe == 18) // 198.18.0.0/15, benchmarking
+        || o[0] >= 240 // reserved
 }
 
 /// Agents may only read the public web: no localhost, private ranges or other local-network hosts.
@@ -268,32 +299,67 @@ fn blocked_host(url: &Url) -> bool {
     }
 }
 
+fn local_address() -> CoreError {
+    CoreError::invalid("that address is on the local network; only public web pages can be opened")
+}
+
+/// Resolve a URL's host and refuse it if any address is not on the public internet. The addresses returned are the
+/// ones to connect to, so a name cannot answer differently the second time (DNS rebinding).
+async fn resolve_public(url: &Url) -> Result<Vec<std::net::SocketAddr>> {
+    if blocked_host(url) {
+        return Err(local_address());
+    }
+    let Some(url::Host::Domain(d)) = url.host() else { return Ok(vec![]) };
+    let addrs: Vec<_> = tokio::net::lookup_host((d, url.port_or_known_default().unwrap_or(443))).await?.collect();
+    if addrs.is_empty() {
+        return Err(CoreError::invalid(format!("could not find {d}")));
+    }
+    if addrs.iter().any(|a| blocked_ip(a.ip())) {
+        return Err(local_address());
+    }
+    Ok(addrs)
+}
+
+/// GET a page, following up to five redirects by hand so every hop is checked and connected to the way it was checked.
+async fn get_public(mut url: Url) -> Result<reqwest::Response> {
+    for _ in 0..=5 {
+        if !matches!(url.scheme(), "http" | "https") {
+            return Err(CoreError::invalid("only http(s) URLs can be opened"));
+        }
+        let addrs = resolve_public(&url).await?;
+        let mut client = reqwest::Client::builder()
+            .user_agent(UA)
+            .connect_timeout(Duration::from_secs(8))
+            .timeout(Duration::from_secs(25))
+            .redirect(reqwest::redirect::Policy::none());
+        if let Some(url::Host::Domain(d)) = url.host() {
+            client = client.resolve_to_addrs(d, &addrs);
+        }
+        let resp = client
+            .build()?
+            .get(url.clone())
+            .header("Accept", "text/html,application/xhtml+xml,text/plain;q=0.9,application/json;q=0.8,*/*;q=0.5")
+            .header("Accept-Language", "en-US,en;q=0.9")
+            .send()
+            .await?;
+        if resp.status().is_redirection()
+            && let Some(next) = resp.headers().get(reqwest::header::LOCATION).and_then(|v| v.to_str().ok()).and_then(|l| url.join(l).ok())
+        {
+            url = next;
+            continue;
+        }
+        return Ok(resp);
+    }
+    Err(CoreError::invalid("the page redirected too many times"))
+}
+
 /// Fetch a page and return it as readable text (HTML is stripped; plain text and JSON pass through).
 pub async fn fetch_page(raw_url: &str, max_chars: usize) -> Result<String> {
     let url = Url::parse(raw_url.trim()).map_err(|_| CoreError::invalid(format!("'{raw_url}' is not a valid URL")))?;
     if !matches!(url.scheme(), "http" | "https") {
         return Err(CoreError::invalid("only http(s) URLs can be opened"));
     }
-    let local = || CoreError::invalid("that address is on the local network; only public web pages can be opened");
-    if blocked_host(&url) {
-        return Err(local());
-    }
-    if let Some(url::Host::Domain(d)) = url.host()
-        && let Ok(addrs) = tokio::net::lookup_host((d, url.port_or_known_default().unwrap_or(443))).await
-        && addrs.into_iter().any(|a| blocked_ip(a.ip()))
-    {
-        return Err(local());
-    }
-    let http = reqwest::Client::builder()
-        .user_agent(UA)
-        .connect_timeout(Duration::from_secs(8))
-        .timeout(Duration::from_secs(25))
-        .redirect(reqwest::redirect::Policy::custom(|a| {
-            if a.previous().len() >= 5 || blocked_host(a.url()) { a.stop() } else { a.follow() }
-        }))
-        .build()?;
-    let mut resp = http.get(url.clone()).header("Accept", "text/html,application/xhtml+xml,text/plain;q=0.9,application/json;q=0.8,*/*;q=0.5")
-        .header("Accept-Language", "en-US,en;q=0.9").send().await?;
+    let mut resp = get_public(url).await?;
     if !resp.status().is_success() {
         return Err(CoreError::invalid(format!("the page answered HTTP {}", resp.status())));
     }
@@ -340,6 +406,33 @@ pub fn html_to_text(html: &str) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn addresses_that_are_not_the_public_internet_are_blocked_however_they_are_written() {
+        for ip in [
+            "127.0.0.1", "10.1.2.3", "192.168.0.9", "172.16.5.5", "169.254.169.254", "0.0.0.0", "0.1.2.3", "100.64.0.1", "100.127.255.254", "198.18.0.1",
+            "192.0.0.8", "224.0.0.1", "255.255.255.255", "240.0.0.1", "::1", "::", "fe80::1", "fc00::1", "fd12::1", "ff02::1",
+            "::ffff:127.0.0.1", "::ffff:10.0.0.1", "::ffff:169.254.169.254", "64:ff9b::7f00:1", "2002:7f00:1::1", "2002:a9fe:a9fe::1",
+        ] {
+            assert!(blocked_ip(ip.parse().unwrap()), "{ip} must be blocked");
+        }
+        for ip in ["1.1.1.1", "8.8.8.8", "93.184.216.34", "100.63.0.1", "100.128.0.1", "198.20.0.1", "2606:4700:4700::1111", "::ffff:8.8.8.8", "2002:0808:0808::1"] {
+            assert!(!blocked_ip(ip.parse().unwrap()), "{ip} must be allowed");
+        }
+        // Odd spellings of loopback are normalized by the URL parser into addresses that are blocked.
+        for u in ["http://2130706433/", "http://0x7f.1/", "http://127.1/", "http://[::ffff:127.0.0.1]/", "http://0177.0.0.1/"] {
+            assert!(blocked_host(&Url::parse(u).unwrap()), "{u}");
+        }
+    }
+
+    #[tokio::test]
+    async fn names_that_resolve_to_local_addresses_are_refused() {
+        // localhost resolves to loopback on every machine; no network is needed to see it refused.
+        for u in ["http://localhost/", "http://127.0.0.1:8080/x", "http://[::ffff:7f00:1]/"] {
+            let err = get_public(Url::parse(u).unwrap()).await.err().expect(u);
+            assert!(err.to_string().contains("local network"), "{u}: {err}");
+        }
+    }
 
     #[test]
     fn text_a_page_hides_from_people_is_dropped() {

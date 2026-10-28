@@ -69,3 +69,19 @@ Limits: this is a mitigation, not a guarantee. Models can still be fooled by tex
 ask rule), files in your project count as trusted for the ask rule (otherwise every run would ask), and an agent that
 read a secret could still try to send it out in the address of a page it opens. Keep web access off in chats where
 that matters.
+
+## Other safeguards
+
+- **Git confirmations.** A push, pull, rebase or other destructive git command only runs after Robert asked about that exact
+  command and your latest message is a plain yes ("yes", "ok", "go ahead"). Anything that also says no, wait or stop, or an
+  unrelated message, does not count, and one yes allows one run.
+- **Approved plans are pinned.** A plan is fingerprinted when it is shown. If its text changes before you approve it (for
+  example through a synced edit), approval is refused and the agent has to produce the plan again.
+- **Commands.** Environment variables whose names look like secrets (`*KEY*`, `*TOKEN*`, `*SECRET*`, `*PASSWORD*`, `*AUTH*`,
+  `AWS_*`, `GITHUB_*`, …) are not passed to them. The workspace's `.git/hooks` and `.git/config` are read-only to them.
+  On Linux the credential folders are hidden as on macOS. A command that times out is killed together with everything it
+  started, and at most 1 MB of its output is kept.
+- **Large files.** `read_file`, `edit_file` and `write_file` refuse files and content over 5 MB.
+- **Web pages.** Addresses are checked after the name is resolved and the connection goes to the address that was checked, so
+  a name cannot point somewhere else the second time; every redirect is checked the same way. Local, private, carrier-grade
+  NAT, multicast and reserved ranges are blocked, including IPv4 addresses hidden inside IPv6 ones.

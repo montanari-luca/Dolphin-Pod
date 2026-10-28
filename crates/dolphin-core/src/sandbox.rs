@@ -7,12 +7,19 @@
 //! - Linux: `bwrap` (bubblewrap) with the root mounted read-only and only the workspace writable.
 //! Commands have no network access unless the chat opted in: on macOS outbound connections, DNS and unix sockets are
 //! denied (loopback still works for local servers and tests), on Linux the command gets its own empty network namespace.
+//! The workspace's own `.git/hooks` and `.git/config` are read-only to commands: git runs outside the sandbox with the
+//! user's credentials, and a hook or config entry planted from inside would run there. Environment variables that look
+//! like secrets are not passed on.
 //! - Windows (and Linux without bubblewrap): no sandbox is available. The command still starts in the
 //!   workspace, but nothing stops it from touching other paths or the network, and the tool output says so.
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
+use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
+
+use crate::error::{CoreError, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Confinement {
@@ -30,6 +37,27 @@ pub const NO_NETWORK_NOTE: &str =
 
 /// Build the command for `script` running in `cwd`, confined to `workspace` when the platform allows.
 pub fn command(script: &str, workspace: &Path, cwd: &Path, network: bool) -> (Command, Confinement) {
+    let (mut c, confinement) = build(script, workspace, cwd, network);
+    scrub_env(&mut c);
+    (c, confinement)
+}
+
+/// Whether an environment variable name suggests it holds a secret (API keys, tokens, passwords, agent sockets).
+pub fn looks_secret(name: &str) -> bool {
+    let n = name.to_uppercase();
+    ["KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL", "AUTH", "COOKIE"].iter().any(|w| n.contains(w))
+        || ["AWS_", "GITHUB_", "GITLAB_", "AZURE_"].iter().any(|p| n.starts_with(p))
+}
+
+fn scrub_env(c: &mut Command) {
+    for (k, _) in std::env::vars_os() {
+        if looks_secret(&k.to_string_lossy()) {
+            c.env_remove(&k);
+        }
+    }
+}
+
+fn build(script: &str, workspace: &Path, cwd: &Path, network: bool) -> (Command, Confinement) {
     if cfg!(windows) {
         let mut c = Command::new("cmd");
         c.arg("/C").arg(script).current_dir(cwd);
@@ -59,12 +87,95 @@ pub fn command(script: &str, workspace: &Path, cwd: &Path, network: bool) -> (Co
                 c.arg("--bind").arg(&dir).arg(&dir);
             }
         }
+        // Credential folders are replaced by empty ones, and the repository's hooks and config cannot be changed.
+        for dir in secret_dirs() {
+            if dir.is_dir() {
+                c.arg("--tmpfs").arg(&dir);
+            }
+        }
+        for path in protected_git_paths(workspace) {
+            if path.exists() {
+                c.arg("--ro-bind").arg(&path).arg(&path);
+            }
+        }
         return (c, Confinement::Sandboxed);
     }
     let _ = (workspace, network);
     let mut c = Command::new("sh");
     c.arg("-c").arg(script).current_dir(cwd);
     (c, Confinement::Unconfined)
+}
+
+/// What a finished command left behind.
+pub struct Finished {
+    pub code: Option<i32>,
+    pub success: bool,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+    /// More output was produced than kept.
+    pub truncated: bool,
+}
+
+/// How much of each output stream is kept; the rest is read and thrown away so the command never blocks on a full pipe.
+const MAX_CAPTURE: usize = 1_000_000;
+
+async fn capture(mut r: impl AsyncRead + Unpin) -> (Vec<u8>, bool) {
+    let (mut kept, mut cut) = (Vec::new(), false);
+    let mut chunk = [0u8; 16 * 1024];
+    loop {
+        match r.read(&mut chunk).await {
+            Ok(0) | Err(_) => return (kept, cut),
+            Ok(n) => {
+                let room = MAX_CAPTURE.saturating_sub(kept.len());
+                kept.extend_from_slice(&chunk[..n.min(room)]);
+                cut |= n > room;
+            }
+        }
+    }
+}
+
+/// Kills a command's whole process group (it and everything it started) unless disarmed: when the command times out,
+/// or when the run is stopped and the future is dropped.
+struct GroupKill(Option<u32>);
+
+impl GroupKill {
+    fn fire(&mut self) {
+        #[cfg(unix)]
+        if let Some(pid) = self.0.take() {
+            // SAFETY: killpg only signals the process group we created for this command.
+            unsafe { libc::killpg(pid as i32, libc::SIGKILL) };
+        }
+    }
+}
+
+impl Drop for GroupKill {
+    fn drop(&mut self) {
+        self.fire();
+    }
+}
+
+/// Run `c` to completion, at most `timeout`. Its output is capped, and on timeout (or if this future is dropped)
+/// the command and everything it started are killed, not just the shell.
+pub async fn run(mut c: Command, timeout: Duration) -> Result<Finished> {
+    c.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).kill_on_drop(true);
+    #[cfg(unix)]
+    c.process_group(0);
+    let mut child = c.spawn()?;
+    let mut group = GroupKill(child.id());
+    let (out, err) = (child.stdout.take().expect("piped"), child.stderr.take().expect("piped"));
+    let work = async { tokio::join!(child.wait(), capture(out), capture(err)) };
+    match tokio::time::timeout(timeout, work).await {
+        Ok((status, (stdout, cut_out), (stderr, cut_err))) => {
+            let status = status?;
+            // The command finished by itself; anything it left running in the background is left alone.
+            group.0 = None;
+            Ok(Finished { code: status.code(), success: status.success(), stdout, stderr, truncated: cut_out || cut_err })
+        }
+        Err(_) => {
+            group.fire();
+            Err(CoreError::invalid(format!("command timed out after {}s and was stopped", timeout.as_secs())))
+        }
+    }
 }
 
 fn home() -> Option<PathBuf> {
@@ -84,6 +195,11 @@ fn cache_dirs() -> Vec<PathBuf> {
 fn secret_dirs() -> Vec<PathBuf> {
     let Some(h) = home() else { return vec![] };
     [".ssh", ".aws", ".gnupg", ".config/gh", ".docker", "Library/Keychains", ".netrc"].iter().map(|d| h.join(d)).collect()
+}
+
+/// Files inside the workspace's repository that decide what git runs: commands may not change them.
+fn protected_git_paths(workspace: &Path) -> Vec<PathBuf> {
+    vec![workspace.join(".git/hooks"), workspace.join(".git/config")]
 }
 
 #[cfg(target_os = "linux")]
@@ -113,6 +229,11 @@ pub fn macos_profile(workspace: &Path, network: bool) -> String {
         }
         p.push_str(")\n");
     }
+    p.push_str("(deny file-write*\n");
+    for path in protected_git_paths(workspace) {
+        p.push_str(&format!("  (subpath {})\n", sbpl(&path)));
+    }
+    p.push_str(")\n");
     if !network {
         p.push_str("(deny network-outbound)\n(allow network-outbound (remote ip \"localhost:*\"))\n");
     }
@@ -122,6 +243,8 @@ pub fn macos_profile(workspace: &Path, network: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use super::run as run_with;
 
     async fn run(script: &str, ws: &Path) -> (String, Confinement) {
         let (mut c, conf) = command(script, ws, ws, false);
@@ -183,6 +306,62 @@ mod tests {
         assert!(out.contains("Operation not permitted"), "outbound connections must be denied: {out}");
         let (out, _) = run("/usr/bin/dscacheutil -q host -a name example.com", &ws).await;
         assert!(out.trim().is_empty(), "DNS lookups must be denied (they leak data): {out}");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn the_repositorys_hooks_and_config_are_read_only_to_commands() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().canonicalize().unwrap();
+        std::fs::create_dir_all(ws.join(".git/hooks")).unwrap();
+        std::fs::write(ws.join(".git/config"), "[core]\n").unwrap();
+        let (out, _) = run("echo evil > .git/hooks/pre-commit; echo evil >> .git/config; echo ref > .git/HEAD; echo done", &ws).await;
+        assert!(out.contains("done"), "{out}");
+        assert!(!ws.join(".git/hooks/pre-commit").exists(), "a hook must not be plantable: {out}");
+        assert_eq!(std::fs::read_to_string(ws.join(".git/config")).unwrap(), "[core]\n", "{out}");
+        assert_eq!(std::fs::read_to_string(ws.join(".git/HEAD")).unwrap().trim(), "ref", "the rest of .git stays writable so git commands work");
+    }
+
+    #[test]
+    fn secret_looking_variables_are_not_passed_on() {
+        for name in ["OPENAI_API_KEY", "GITHUB_TOKEN", "AWS_ACCESS_KEY_ID", "DB_PASSWORD", "SSH_AUTH_SOCK", "npm_config_authtoken", "MY_SECRET"] {
+            assert!(looks_secret(name), "{name}");
+        }
+        for name in ["PATH", "HOME", "LANG", "TERM", "SHELL", "USER", "TMPDIR", "CARGO_HOME"] {
+            assert!(!looks_secret(name), "{name}");
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let (c, _) = command("true", dir.path(), dir.path(), false);
+        let removed: Vec<_> = c.as_std().get_envs().filter(|(_, v)| v.is_none()).map(|(k, _)| k.to_string_lossy().into_owned()).collect();
+        for (k, _) in std::env::vars_os() {
+            let k = k.to_string_lossy().into_owned();
+            assert_eq!(removed.contains(&k), looks_secret(&k), "{k}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_timeout_stops_everything_the_command_started() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().canonicalize().unwrap();
+        let (c, _) = command("sleep 30 & echo $! > pid; sleep 30", &ws, &ws, false);
+        let err = run_with(c, Duration::from_secs(1)).await.err().expect("times out");
+        assert!(err.to_string().contains("timed out"), "{err}");
+        let pid: i32 = std::fs::read_to_string(ws.join("pid")).unwrap().trim().parse().unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        // SAFETY: signal 0 only checks that the process exists.
+        let alive = unsafe { libc::kill(pid, 0) } == 0;
+        assert!(!alive, "the background process {pid} must be killed with the command");
+    }
+
+    #[tokio::test]
+    async fn runaway_output_is_capped_not_buffered() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().canonicalize().unwrap();
+        let (c, _) = command("head -c 3000000 /dev/zero | tr '\\0' x", &ws, &ws, false);
+        let out = run_with(c, Duration::from_secs(30)).await.unwrap();
+        assert_eq!(out.stdout.len(), MAX_CAPTURE);
+        assert!(out.truncated && out.success);
     }
 
     #[test]

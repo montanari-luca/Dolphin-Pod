@@ -144,6 +144,12 @@ impl Core {
         if plan.meta["plan"]["approved"].as_bool() == Some(true) {
             return Ok(());
         }
+        // What gets implemented is what was shown: the hash was taken when the plan finished.
+        if let Some(h) = plan.meta["plan"]["hash"].as_str()
+            && h != plan_hash(&plan.content)
+        {
+            return Err(CoreError::invalid("this plan changed after it was shown, so it cannot be approved. Ask for the plan again."));
+        }
         let chat = self.db.get_chat(&plan.chat_id)?;
         let core = self.clone();
         tokio::spawn(async move {
@@ -349,7 +355,8 @@ impl Core {
     async fn run_approved_plan(self: &Arc<Self>, chat: &Chat, mut plan: Message, token: &CancellationToken) -> Result<()> {
         let agent_id = plan.agent_id.clone().ok_or_else(|| CoreError::invalid("plan has no author"))?;
         let agent = self.db.get_agent(&agent_id)?;
-        plan.meta["plan"] = json!({ "approved": true, "approvedAt": now_ms() });
+        plan.meta["plan"]["approved"] = json!(true);
+        plan.meta["plan"]["approvedAt"] = json!(now_ms());
         self.save_message(&plan)?;
         self.change_grant(&chat.id, &agent.id, PermissionLevel::Full, "plan approved")?;
 
@@ -366,7 +373,7 @@ impl Core {
             "Lincoln (orchestrator) → {}: the user approved your plan above. You now have full agentic permissions in this chat. Implement the plan step by step, verify your work, then summarize what you changed.",
             agent.name
         );
-        let task = AgentTask::new(Mode::Implement, Some(brief), false, json!({ "via": "lincoln", "mode": "implement", "planApproved": plan.id }));
+        let task = AgentTask::new(Mode::Implement, Some(brief), false, json!({ "via": "lincoln", "mode": "implement", "planApproved": plan.id, "planHash": plan_hash(&plan.content) }));
         self.run_agent(&turn, &agent, task).await.map(|_| ())
     }
 
@@ -488,6 +495,9 @@ impl Core {
         }
         if msg.status == MessageStatus::Done && msg.content.trim().is_empty() && msg.attachments.is_empty() {
             msg.content = "_(no response)_".into();
+        }
+        if task.plan && msg.status == MessageStatus::Done {
+            msg.meta["plan"]["hash"] = json!(plan_hash(&msg.content));
         }
         let (tin, tout) = stats.tokens(&msg);
         msg.tokens_in = Some(tin);
@@ -1023,6 +1033,12 @@ impl Core {
             None => "Image generated and shown to the user.".into(),
         })
     }
+}
+
+/// Fingerprint of a plan's text, taken when the plan is shown and checked when it is approved.
+fn plan_hash(content: &str) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(content.as_bytes()))
 }
 
 #[derive(Default)]

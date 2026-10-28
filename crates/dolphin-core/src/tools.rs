@@ -12,6 +12,8 @@ use crate::providers::ToolSpec;
 use crate::util::truncate;
 use crate::websearch;
 
+/// Largest file read_file and edit_file will load, and largest content write_file will write.
+const MAX_FILE_BYTES: u64 = 5_000_000;
 const MAX_OUTPUT: usize = 24_000;
 
 /// A burst of parallel lookups is queued, not fired all at once: the search engines are scraped and answer
@@ -263,6 +265,20 @@ pub fn specs(has_workspace: bool, level: PermissionLevel) -> Vec<ToolSpec> {
     v
 }
 
+/// Refuse files too large to load whole: reading them would fill memory and the model's context for nothing.
+async fn too_big(path: &Path, what: &str) -> Result<()> {
+    if let Ok(meta) = tokio::fs::metadata(path).await
+        && meta.len() > MAX_FILE_BYTES
+    {
+        return Err(CoreError::invalid(format!(
+            "that file is {} MB; {what}_file handles at most {} MB. Use search, or a command such as head or sed -n, to look at part of it.",
+            meta.len() / 1_000_000,
+            MAX_FILE_BYTES / 1_000_000
+        )));
+    }
+    Ok(())
+}
+
 fn s<'a>(args: &'a Value, key: &str) -> Result<&'a str> {
     args[key].as_str().ok_or_else(|| CoreError::invalid(format!("missing '{key}'")))
 }
@@ -313,6 +329,7 @@ pub async fn execute(workspace: &Path, level: PermissionLevel, network: bool, na
         }
         "read_file" => {
             let p = resolve_in_workspace(workspace, s(args, "path")?)?;
+            too_big(&p, "read").await?;
             let bytes = tokio::fs::read(&p).await.map_err(|e| CoreError::invalid(format!("cannot read {}: {e}", s(args, "path").unwrap_or(""))))?;
             if bytes.iter().take(8000).any(|b| *b == 0) {
                 return Err(CoreError::invalid("that looks like a binary file"));
@@ -361,6 +378,9 @@ pub async fn execute(workspace: &Path, level: PermissionLevel, network: bool, na
             let p = resolve_in_workspace(workspace, s(args, "path")?)?;
             check_writable(workspace, &p)?;
             let content = s(args, "content")?;
+            if content.len() as u64 > MAX_FILE_BYTES {
+                return Err(CoreError::invalid(format!("that content is {} MB; write_file takes at most {} MB. Split it across files or generate it with a command.", content.len() / 1_000_000, MAX_FILE_BYTES / 1_000_000)));
+            }
             if let Some(parent) = p.parent() {
                 tokio::fs::create_dir_all(parent).await?;
             }
@@ -371,6 +391,7 @@ pub async fn execute(workspace: &Path, level: PermissionLevel, network: bool, na
             let p = resolve_in_workspace(workspace, s(args, "path")?)?;
             check_writable(workspace, &p)?;
             let (old, new) = (s(args, "old")?, s(args, "new")?);
+            too_big(&p, "edit").await?;
             let text = tokio::fs::read_to_string(&p).await?;
             let count = text.matches(old).count();
             let all = args["replace_all"].as_bool().unwrap_or(false);
@@ -389,12 +410,8 @@ pub async fn execute(workspace: &Path, level: PermissionLevel, network: bool, na
             let cwd = resolve_in_workspace(workspace, args["cwd"].as_str().unwrap_or("."))?;
             let secs = args["timeout_seconds"].as_u64().unwrap_or(120).clamp(1, 600);
             let ws = workspace.canonicalize()?;
-            let (mut c, confinement) = crate::sandbox::command(cmd, &ws, &cwd, network);
-            c.kill_on_drop(true).stdin(std::process::Stdio::null());
-            let out = match tokio::time::timeout(Duration::from_secs(secs), c.output()).await {
-                Ok(r) => r?,
-                Err(_) => return Err(CoreError::invalid(format!("command timed out after {secs}s"))),
-            };
+            let (c, confinement) = crate::sandbox::command(cmd, &ws, &cwd, network);
+            let out = crate::sandbox::run(c, Duration::from_secs(secs)).await?;
             let mut text = String::new();
             text.push_str(&String::from_utf8_lossy(&out.stdout));
             let err = String::from_utf8_lossy(&out.stderr);
@@ -402,12 +419,15 @@ pub async fn execute(workspace: &Path, level: PermissionLevel, network: bool, na
                 text.push_str("\n[stderr]\n");
                 text.push_str(&err);
             }
+            if out.truncated {
+                text.push_str("\n[output cut off: the command printed more than 1 MB]");
+            }
             if confinement == crate::sandbox::Confinement::Unconfined {
                 text.push_str(&format!("\n{}", crate::sandbox::UNCONFINED_NOTE));
-            } else if !network && !out.status.success() {
+            } else if !network && !out.success {
                 text.push_str(&format!("\n{}", crate::sandbox::NO_NETWORK_NOTE));
             }
-            Ok(truncate(&format!("exit code: {}\n{}", out.status.code().unwrap_or(-1), text.trim_end()), MAX_OUTPUT))
+            Ok(truncate(&format!("exit code: {}\n{}", out.code.unwrap_or(-1), text.trim_end()), MAX_OUTPUT))
         }
         other => Err(CoreError::invalid(format!("unknown tool '{other}'"))),
     }
@@ -525,5 +545,20 @@ mod tests {
         assert!(options.iter().any(|o| o.label.starts_with(APPROVE_ALWAYS)) && prefix.is_some());
         let (_, options, _) = approval_question("Rick", "write_file", &json!({ "path": "a", "content": "b" }), true);
         assert_eq!(options.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn huge_files_are_refused_not_loaded() {
+        let dir = tempfile::tempdir().unwrap();
+        let big = std::fs::File::create(dir.path().join("big.bin")).unwrap();
+        big.set_len(MAX_FILE_BYTES + 1).unwrap();
+        let full = PermissionLevel::Full;
+        let err = execute(dir.path(), full, false, "read_file", &json!({"path": "big.bin"})).await.unwrap_err();
+        assert!(err.to_string().contains("handles at most"), "{err}");
+        let err = execute(dir.path(), full, false, "edit_file", &json!({"path": "big.bin", "old": "a", "new": "b"})).await.unwrap_err();
+        assert!(err.to_string().contains("handles at most"), "{err}");
+        let content = "x".repeat(MAX_FILE_BYTES as usize + 1);
+        assert!(execute(dir.path(), full, false, "write_file", &json!({"path": "w.txt", "content": content})).await.is_err());
+        assert!(!dir.path().join("w.txt").exists());
     }
 }

@@ -1315,6 +1315,7 @@ dependencies = [
  "hostname",
  "ignore",
  "keyring",
+ "libc",
  "mdns-sd",
  "mime_guess",
  "pdf-extract",
