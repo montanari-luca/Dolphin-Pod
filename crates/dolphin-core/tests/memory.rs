@@ -55,7 +55,7 @@ fn pod() -> Pod {
     let provider = Arc::new(Scripted::default());
     core.override_provider(&cfg.id, provider.clone());
     for a in core.list_agents().unwrap() {
-        if ["roger", "lincoln", "rick"].contains(&a.slug.as_str()) {
+        if ["roger", "lincoln", "rick", "prof"].contains(&a.slug.as_str()) {
             let mut a = a;
             a.model = Some(ModelRef { provider_id: cfg.id.clone(), model_id: "qwen3.5:2b".into(), effort: Some(EffortValue::Toggle(true)), vision: false, tools: true, context_window: None });
             core.update_agent(a).unwrap();
@@ -206,4 +206,107 @@ fn forgetting_everything_touches_only_that_agent_and_the_cap_holds() {
     assert!(p.core.list_agent_memories(&rick.id).unwrap().is_empty());
     assert_eq!(p.core.list_agent_memories(&roger.id).unwrap().len(), 1, "the other agent keeps its own");
     p.core.add_agent_memory(&rick.id, MemoryKind::Fact, "room again", None).unwrap();
+}
+
+// ---------------------------------------------------------------- sharing a note with other agents
+
+/// Rick's note, shared as asked.
+fn shared_note(p: &Pod, text: &str, share: MemoryShare) -> AgentMemory {
+    let rick = agent(&p.core, "rick");
+    let m = p.core.add_agent_memory(&rick.id, MemoryKind::Style, text, None).unwrap();
+    p.core.update_agent_memory(AgentMemory { share, ..m }).unwrap()
+}
+
+async fn ask(p: &Pod, chat_name: &str, who: &str, n: usize) -> String {
+    let c = chat(&p.core, chat_name);
+    p.core.send_message(&c.id, &format!("@{who} hello"), vec![]).await.unwrap();
+    wait_for_answers(&p.core, &c.id, n).await;
+    last_request(p, who).1
+}
+
+#[tokio::test]
+async fn a_shared_note_reaches_the_agents_it_is_shared_with_and_nobody_else() {
+    let p = pod();
+    let (prof, roger) = (agent(&p.core, "prof"), agent(&p.core, "roger"));
+    shared_note(&p, "Everyone: keep it terse", MemoryShare::All);
+    shared_note(&p, "Only Prof: explain with examples", MemoryShare::Agents { ids: vec![prof.id.clone()] });
+    p.core.add_agent_memory(&agent(&p.core, "rick").id, MemoryKind::Fact, "Private to Rick", None).unwrap();
+
+    let to_roger = ask(&p, "Coding", "Roger", 1).await;
+    assert!(to_roger.contains("Everyone: keep it terse"), "{to_roger}");
+    assert!(!to_roger.contains("Only Prof") && !to_roger.contains("Private to Rick"), "{to_roger}");
+
+    let to_prof = ask(&p, "Coding", "Prof", 2).await;
+    assert!(to_prof.contains("Everyone: keep it terse") && to_prof.contains("Only Prof: explain with examples"), "{to_prof}");
+    assert!(!to_prof.contains("Private to Rick"));
+
+    let to_rick = ask(&p, "Coding", "Rick", 3).await;
+    assert_eq!(to_rick.matches("Everyone: keep it terse").count(), 1, "the owner is sent its own note once, not twice");
+    assert!(to_rick.contains("Private to Rick"));
+    assert!(p.core.list_agent_memories(&roger.id).unwrap().is_empty(), "sharing sends a note, it does not copy it into the other agent's list");
+}
+
+#[tokio::test]
+async fn project_scope_still_applies_and_a_duplicate_is_sent_once() {
+    let p = pod();
+    let roger = agent(&p.core, "roger");
+    let rick = agent(&p.core, "rick");
+    let m = p.core.add_agent_memory(&rick.id, MemoryKind::Workflow, "Alpha: use tabs", Some("proj-alpha")).unwrap();
+    p.core.update_agent_memory(AgentMemory { share: MemoryShare::All, ..m }).unwrap();
+    shared_note(&p, "Be polite", MemoryShare::All);
+    p.core.add_agent_memory(&roger.id, MemoryKind::Style, "be polite", None).unwrap();
+
+    let in_general = ask(&p, "General", "Roger", 1).await;
+    assert!(!in_general.contains("Alpha: use tabs"), "a project note is for that project even when shared: {in_general}");
+    assert_eq!(in_general.to_lowercase().matches("be polite").count(), 1, "Roger already has this note: {in_general}");
+}
+
+#[test]
+fn sharing_is_checked_and_every_agent_it_reaches_is_told() {
+    let p = pod();
+    let (rick, roger, prof) = (agent(&p.core, "rick"), agent(&p.core, "roger"), agent(&p.core, "prof"));
+    let m = p.core.add_agent_memory(&rick.id, MemoryKind::Style, "Be brief", None).unwrap();
+    let mut events = p.core.subscribe();
+    let told = |events: &mut tokio::sync::broadcast::Receiver<CoreEvent>| {
+        let mut ids: Vec<String> = Vec::new();
+        while let Ok(e) = events.try_recv() {
+            if let CoreEvent::MemoriesChanged { agent_id } = e {
+                ids.push(agent_id);
+            }
+        }
+        ids.sort();
+        ids.dedup();
+        ids
+    };
+
+    // Unknown agents, the owner itself and repeats are dropped; nothing left means no sharing.
+    let junk = MemoryShare::Agents { ids: vec![rick.id.clone(), "nobody".into(), rick.id.clone()] };
+    assert_eq!(p.core.update_agent_memory(AgentMemory { share: junk, ..m.clone() }).unwrap().share, MemoryShare::None);
+    let some = MemoryShare::Agents { ids: vec![prof.id.clone(), prof.id.clone(), "nobody".into()] };
+    let saved = p.core.update_agent_memory(AgentMemory { share: some, ..m.clone() }).unwrap();
+    assert_eq!(saved.share, MemoryShare::Agents { ids: vec![prof.id.clone()] });
+    assert_eq!(saved.source, MemorySource::Explicit, "sharing does not make it an edited note");
+    let mut want = vec![rick.id.clone(), prof.id.clone()];
+    want.sort();
+    assert_eq!(told(&mut events), want, "the owner's list and Prof's list changed");
+    assert_eq!(p.core.list_shared_memories(&prof.id).unwrap().len(), 1);
+    assert!(p.core.list_shared_memories(&roger.id).unwrap().is_empty());
+    assert!(p.core.list_shared_memories(&rick.id).unwrap().is_empty(), "an agent is not sent its own note as a shared one");
+
+    // Widening to everyone tells everyone; taking it back tells everyone who had it.
+    p.core.update_agent_memory(AgentMemory { share: MemoryShare::All, ..saved.clone() }).unwrap();
+    assert!(told(&mut events).contains(&roger.id));
+    p.core.update_agent_memory(AgentMemory { share: MemoryShare::None, ..saved }).unwrap();
+    assert!(told(&mut events).contains(&roger.id) && p.core.list_shared_memories(&roger.id).unwrap().is_empty());
+
+    // Deleting a shared note, or forgetting its owner's memory, removes it from every list.
+    let again = p.core.update_agent_memory(AgentMemory { share: MemoryShare::All, ..p.core.list_agent_memories(&rick.id).unwrap().remove(0) }).unwrap();
+    told(&mut events);
+    p.core.delete_agent_memory(&again.id).unwrap();
+    assert!(told(&mut events).contains(&roger.id) && p.core.list_shared_memories(&roger.id).unwrap().is_empty());
+    let m2 = p.core.add_agent_memory(&rick.id, MemoryKind::Fact, "Fact", None).unwrap();
+    p.core.update_agent_memory(AgentMemory { share: MemoryShare::All, ..m2 }).unwrap();
+    assert_eq!(p.core.list_shared_memories(&roger.id).unwrap().len(), 1);
+    p.core.forget_agent_memories(&rick.id).unwrap();
+    assert!(p.core.list_shared_memories(&roger.id).unwrap().is_empty());
 }

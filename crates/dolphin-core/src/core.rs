@@ -319,47 +319,97 @@ impl Core {
             project: memory::clean_project(project),
             source: MemorySource::Explicit,
             pinned: false,
+            share: MemoryShare::None,
             hits: 0,
             created_at: 0,
             updated_at: 0,
         })?;
-        self.emit(CoreEvent::MemoriesChanged { agent_id: agent_id.to_string() });
+        self.memories_changed(&[&saved]);
         Ok(saved)
     }
 
-    /// Change an entry's text, kind, scope or pin. Rewording it (or re-scoping it) marks it as the user's own.
+    /// Change an entry's text, kind, scope, pin or who it is shared with. Rewording it (or re-scoping it) marks it as the
+    /// user's own; pinning or sharing it does not change where it came from.
     pub fn update_agent_memory(&self, m: AgentMemory) -> Result<AgentMemory> {
         let current = self.db.get_memory(&m.id)?;
         let text = Self::memory_text(&m.text)?;
         let project = memory::clean_project(m.project.as_deref());
         let reworked = text != current.text || m.kind != current.kind || project != current.project;
+        let share = self.checked_share(&current.agent_id, m.share);
         let saved = self.db.upsert_memory(&AgentMemory {
             text,
             kind: m.kind,
             project,
             pinned: m.pinned,
+            share,
             source: if reworked { MemorySource::Edited } else { current.source },
-            ..current
+            ..current.clone()
         })?;
-        self.emit(CoreEvent::MemoriesChanged { agent_id: saved.agent_id.clone() });
+        // Whoever it reached before, and whoever it reaches now, has a list that changed.
+        self.memories_changed(&[&current, &saved]);
         Ok(saved)
     }
 
     pub fn delete_agent_memory(&self, id: &str) -> Result<()> {
         let current = self.db.get_memory(id)?;
         self.db.delete_memory(id)?;
-        self.emit(CoreEvent::MemoriesChanged { agent_id: current.agent_id });
+        self.memories_changed(&[&current]);
         Ok(())
     }
 
     /// Wipe everything one agent remembers. How many entries went.
     pub fn forget_agent_memories(&self, agent_id: &str) -> Result<usize> {
         self.db.get_agent(agent_id)?;
+        let gone = self.db.list_memories(agent_id)?;
         let n = self.db.forget_memories(agent_id)?;
         if n > 0 {
-            self.emit(CoreEvent::MemoriesChanged { agent_id: agent_id.to_string() });
+            let refs: Vec<&AgentMemory> = gone.iter().collect();
+            self.memories_changed(&refs);
         }
         Ok(n)
+    }
+
+    /// Notes other agents shared with this one. Read-only here: their owners change or take them back.
+    pub fn list_shared_memories(&self, agent_id: &str) -> Result<Vec<AgentMemory>> {
+        self.db.get_agent(agent_id)?;
+        self.db.memories_shared_with(agent_id)
+    }
+
+    /// Sharing as it is stored: only real agents other than the owner, no repeats, and an empty list is no sharing.
+    fn checked_share(&self, owner: &str, share: MemoryShare) -> MemoryShare {
+        match share {
+            MemoryShare::Agents { ids } => {
+                let mut kept: Vec<String> = Vec::new();
+                for id in ids {
+                    if id != owner && !kept.contains(&id) && self.db.get_agent(&id).is_ok() {
+                        kept.push(id);
+                    }
+                }
+                if kept.is_empty() { MemoryShare::None } else { MemoryShare::Agents { ids: kept } }
+            }
+            other => other,
+        }
+    }
+
+    /// Tell the UI these notes changed: the lists of their owners and of every agent they are shared with.
+    pub(crate) fn memories_changed(&self, notes: &[&AgentMemory]) {
+        let mut agents: Vec<String> = Vec::new();
+        let mut push = |id: &str| {
+            if !agents.iter().any(|a| a == id) {
+                agents.push(id.to_string());
+            }
+        };
+        for m in notes {
+            push(&m.agent_id);
+            match &m.share {
+                MemoryShare::None => {}
+                MemoryShare::Agents { ids } => ids.iter().for_each(|id| push(id)),
+                MemoryShare::All => self.db.list_agents().unwrap_or_default().iter().for_each(|a| push(&a.id)),
+            }
+        }
+        for agent_id in agents {
+            self.emit(CoreEvent::MemoriesChanged { agent_id });
+        }
     }
 
     /// The persona change an agent has suggested for itself, if one is waiting for the user.

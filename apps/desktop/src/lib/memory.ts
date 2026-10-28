@@ -1,4 +1,4 @@
-import type { MemoryKind } from "@dolphin/shared";
+import type { MemoryKind, MemoryShare } from "@dolphin/shared";
 
 /** Match the core's limits (crates/dolphin-core/src/memory/mod.rs). */
 export const MEMORY_MAX_ENTRIES = 40;
@@ -31,4 +31,27 @@ export function cleanProject(project: string | null | undefined): string | null 
 export function projectOf(workspacePath: string | null | undefined): string | null {
   const parts = (workspacePath ?? "").split(/[\\/]+/).filter(Boolean);
   return parts.length ? parts[parts.length - 1] : null;
+}
+
+/** Whether a note owned by `owner` is sent to `agent` as well (the core's rule: never to its own owner). */
+export function sharedWith(share: MemoryShare, owner: string, agent: string): boolean {
+  if (owner === agent) return false;
+  return share.type === "all" || (share.type === "agents" && share.ids.includes(agent));
+}
+
+/** Sharing as it is stored: only real agents other than the owner, no repeats, and an empty list is no sharing. */
+export function normalizeShare(share: MemoryShare, owner: string, agentIds: string[]): MemoryShare {
+  if (share.type !== "agents") return share;
+  const ids = [...new Set(share.ids)].filter((id) => id !== owner && agentIds.includes(id));
+  return ids.length ? { type: "agents", ids } : { type: "none" };
+}
+
+/** Every agent whose list changes when these notes do: their owners, and whoever they are shared with. */
+export function affectedAgents(notes: { agentId: string; share: MemoryShare }[], agentIds: string[]): string[] {
+  const out = new Set<string>();
+  for (const n of notes) {
+    out.add(n.agentId);
+    for (const id of agentIds) if (sharedWith(n.share, n.agentId, id)) out.add(id);
+  }
+  return [...out];
 }

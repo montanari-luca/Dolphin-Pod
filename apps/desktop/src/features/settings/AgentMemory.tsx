@@ -1,7 +1,7 @@
-import { Brain, Pin, Plus, Trash2 } from "lucide-react";
+import { Brain, Pin, Plus, Trash2, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Agent, AgentMemory, MemoryKind } from "@dolphin/shared";
-import { Badge, Button, ConfirmDialog, IconButton, Input, Select, Switch } from "@/components/ui";
+import type { Agent, AgentMemory, MemoryKind, MemoryShare } from "@dolphin/shared";
+import { Badge, Button, ConfirmDialog, Dialog, IconButton, Input, Select, Switch } from "@/components/ui";
 import { errorText } from "@/ipc/api";
 import { MEMORY_KINDS, MEMORY_MAX_ENTRIES, MEMORY_MAX_TEXT, projectOf } from "@/lib/memory";
 import { useApp } from "@/store/app";
@@ -21,7 +21,9 @@ export function AgentMemoryPanel({ agent, learning, onLearningChange, suggestPer
   const toast = useApp((s) => s.toast);
   const version = useApp((s) => s.memoryVersion[agent.id] ?? 0);
   const chats = useApp((s) => s.chats);
+  const allAgents = useApp((s) => s.agents);
   const [items, setItems] = useState<AgentMemory[] | null>(null);
+  const [fromOthers, setFromOthers] = useState<AgentMemory[]>([]);
   const [confirmForget, setConfirmForget] = useState(false);
 
   const projects = useMemo(() => [...new Set(chats.map((c) => projectOf(c.workspacePath)).filter((p): p is string => !!p))].sort(), [chats]);
@@ -29,7 +31,9 @@ export function AgentMemoryPanel({ agent, learning, onLearningChange, suggestPer
   const reload = useCallback(async () => {
     if (!api) return;
     try {
-      setItems(await api.listAgentMemories(agent.id));
+      const [own, shared] = await Promise.all([api.listAgentMemories(agent.id), api.listSharedMemories(agent.id)]);
+      setItems(own);
+      setFromOthers(shared);
     } catch (e) {
       toast("error", errorText(e));
     }
@@ -96,11 +100,30 @@ export function AgentMemoryPanel({ agent, learning, onLearningChange, suggestPer
             key={m.id + m.updatedAt}
             memory={m}
             projects={projects}
+            others={allAgents.filter((a) => a.id !== agent.id)}
             onChange={(next) => run(() => api!.updateAgentMemory(next))}
             onDelete={() => run(() => api!.deleteAgentMemory(m.id))}
           />
         ))}
       </ul>
+
+      {fromOthers.length > 0 && (
+        <div className="space-y-1.5 border-t border-line pt-3">
+          <div className="text-[12px] font-medium text-fg">From other agents</div>
+          <p className="text-[11.5px] leading-relaxed text-faint">
+            Notes you shared with {agent.name} from another agent's memory. {agent.name} is sent them too; change or take them back in that agent's Memory.
+          </p>
+          <ul className="space-y-1">
+            {fromOthers.map((m) => (
+              <li key={m.id} className="flex flex-wrap items-center gap-1.5 rounded-sm bg-surface-0 px-2.5 py-1.5 text-[12.5px] text-fg">
+                <span className="min-w-0 flex-1">{m.text}</span>
+                <Badge>{allAgents.find((a) => a.id === m.agentId)?.name ?? "another agent"}</Badge>
+                {m.project && <Badge>{m.project}</Badge>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <AddMemory
         projects={projects}
@@ -151,7 +174,79 @@ function KindSelect({ value, onChange, label }: { value: MemoryKind; onChange: (
   );
 }
 
-function MemoryRow({ memory, projects, onChange, onDelete }: { memory: AgentMemory; projects: string[]; onChange: (m: AgentMemory) => void; onDelete: () => void }) {
+/** Private, shared with every other agent, or with chosen ones. A shared note is the user's own: its agent's learner leaves it alone. */
+function ShareControl({ memory, others, onChange }: { memory: AgentMemory; others: Agent[]; onChange: (s: MemoryShare) => void }) {
+  const [choosing, setChoosing] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  const share = memory.share;
+  const open = () => {
+    setPicked(share.type === "agents" ? share.ids : []);
+    setChoosing(true);
+  };
+  const chosen = share.type === "agents" ? others.filter((a) => share.ids.includes(a.id)) : [];
+  return (
+    <>
+      <Select
+        aria-label="Who else gets this note"
+        title="Shared notes are sent to the other agents too. Notes you share count as yours: the learner won't change them."
+        className="h-7 w-auto! text-[12px]"
+        value={share.type}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v === "agents") open();
+          else onChange({ type: v as "none" | "all" });
+        }}
+      >
+        <option value="none">Private</option>
+        <option value="all">Shared with all agents</option>
+        <option value="agents">{chosen.length ? `Shared with ${chosen.length}` : "Chosen agents…"}</option>
+      </Select>
+      {share.type === "agents" && (
+        <button className="inline-flex items-center gap-1 text-[11.5px] text-muted hover:text-fg" onClick={open} title={chosen.map((a) => a.name).join(", ")}>
+          <Users className="size-3" /> {chosen.map((a) => a.name).join(", ") || "edit"}
+        </button>
+      )}
+      <Dialog
+        open={choosing}
+        onOpenChange={setChoosing}
+        title="Share this note with"
+        description="Pick the agents that should be sent this note along with their own. It stays in this agent's memory; you can take it back at any time."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setChoosing(false)}>Cancel</Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                setChoosing(false);
+                onChange(picked.length ? { type: "agents", ids: picked } : { type: "none" });
+              }}
+            >
+              Save
+            </Button>
+          </>
+        }
+      >
+        <ul className="max-h-72 space-y-1 overflow-y-auto">
+          {others.map((a) => (
+            <li key={a.id}>
+              <label className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-[13px] hover:bg-hover">
+                <input
+                  type="checkbox"
+                  className="accent-[var(--accent)]"
+                  checked={picked.includes(a.id)}
+                  onChange={(e) => setPicked(e.target.checked ? [...picked, a.id] : picked.filter((id) => id !== a.id))}
+                />
+                {a.name}
+              </label>
+            </li>
+          ))}
+        </ul>
+      </Dialog>
+    </>
+  );
+}
+
+function MemoryRow({ memory, projects, others, onChange, onDelete }: { memory: AgentMemory; projects: string[]; others: Agent[]; onChange: (m: AgentMemory) => void; onDelete: () => void }) {
   const [text, setText] = useState(memory.text);
   const commitText = () => {
     if (text.trim() && text.trim() !== memory.text) onChange({ ...memory, text });
@@ -182,6 +277,7 @@ function MemoryRow({ memory, projects, onChange, onDelete }: { memory: AgentMemo
       <div className="flex flex-wrap items-center gap-1.5">
         <KindSelect label="Kind" value={memory.kind} onChange={(kind) => onChange({ ...memory, kind })} />
         <ScopeSelect label="Where it applies" value={memory.project} projects={projects} onChange={(project) => onChange({ ...memory, project })} />
+        <ShareControl memory={memory} others={others} onChange={(share) => onChange({ ...memory, share })} />
         <Badge tone={memory.source === "auto" ? "accent" : "neutral"}>{SOURCE_LABEL[memory.source]}</Badge>
       </div>
     </li>

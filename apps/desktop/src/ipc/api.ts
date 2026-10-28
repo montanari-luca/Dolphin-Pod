@@ -46,6 +46,8 @@ export interface Backend {
   listAgents(): Promise<Agent[]>;
   updateAgent(agent: Agent): Promise<Agent>;
   listAgentMemories(agentId: string): Promise<AgentMemory[]>;
+  /** Notes other agents shared with this one. Read-only here: their owners change or take them back. */
+  listSharedMemories(agentId: string): Promise<AgentMemory[]>;
   addAgentMemory(agentId: string, kind: MemoryKind, text: string, project: string | null): Promise<AgentMemory>;
   updateAgentMemory(memory: AgentMemory): Promise<AgentMemory>;
   deleteAgentMemory(id: string): Promise<void>;

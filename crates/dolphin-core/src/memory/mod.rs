@@ -137,6 +137,7 @@ mod tests {
             project: project.map(Into::into),
             source: MemorySource::Auto,
             pinned: false,
+            share: crate::model::MemoryShare::None,
             hits: 0,
             created_at: 0,
             updated_at: 0,

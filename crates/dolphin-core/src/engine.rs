@@ -450,7 +450,10 @@ impl Core {
     /// What this agent remembers about the user that applies to this request, ready to send after the history.
     /// Counting the entries as used is best effort: a failure here must never stop a run.
     fn memory_message(&self, agent: &Agent, chat: &Chat, query: &str) -> Option<String> {
-        let all = self.db.list_memories(&agent.id).ok()?;
+        let mut all = self.db.list_memories(&agent.id).ok()?;
+        // Notes other agents shared with this one come along too, unless it already has the same note itself.
+        let own: Vec<String> = all.iter().map(|m| m.text.to_lowercase()).collect();
+        all.extend(self.db.memories_shared_with(&agent.id).unwrap_or_default().into_iter().filter(|m| !own.contains(&m.text.to_lowercase())));
         let project = crate::memory::project_of(chat.workspace_path.as_deref());
         let picked = crate::memory::select(&all, project.as_deref(), query);
         let text = crate::memory::block(&picked)?;

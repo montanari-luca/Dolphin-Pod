@@ -362,6 +362,35 @@ pub enum MemorySource {
     Edited,
 }
 
+/// Who else an agent's note is sent to. A note is private to its agent unless the user shares it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "snake_case")]
+#[ts(export)]
+pub enum MemoryShare {
+    #[default]
+    None,
+    /// Every other agent.
+    All,
+    /// These agents only.
+    Agents { ids: Vec<Id> },
+}
+
+impl MemoryShare {
+    /// Whether a note owned by `owner` is sent to `agent` as well.
+    pub fn reaches(&self, owner: &str, agent: &str) -> bool {
+        owner != agent
+            && match self {
+                Self::None => false,
+                Self::All => true,
+                Self::Agents { ids } => ids.iter().any(|i| i == agent),
+            }
+    }
+
+    pub fn is_shared(&self) -> bool {
+        !matches!(self, Self::None)
+    }
+}
+
 /// One thing an agent remembers about the user. Belongs to one agent and is never shown to the others.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -376,6 +405,8 @@ pub struct AgentMemory {
     pub source: MemorySource,
     /// Pinned entries always reach the agent and are never expired.
     pub pinned: bool,
+    /// Who else it is sent to. The owner keeps and edits it.
+    pub share: MemoryShare,
     /// How many requests this entry was sent with, on this device.
     #[ts(type = "number")]
     pub hits: i64,

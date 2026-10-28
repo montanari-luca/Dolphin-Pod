@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MEMORY_MAX_TEXT, cleanMemoryText, cleanProject, projectOf } from "./memory";
+import { MEMORY_MAX_TEXT, affectedAgents, cleanMemoryText, cleanProject, normalizeShare, projectOf, sharedWith } from "./memory";
 
 describe("memory text", () => {
   it("keeps one clean line", () => {
@@ -24,5 +24,27 @@ describe("memory text", () => {
     expect(projectOf("C:\\Dev\\web")).toBe("web");
     expect(projectOf("/")).toBeNull();
     expect(projectOf(null)).toBeNull();
+  });
+
+  it("shares a note with everyone, with chosen agents or with nobody, but never back to its owner", () => {
+    expect(sharedWith({ type: "none" }, "rick", "prof")).toBe(false);
+    expect(sharedWith({ type: "all" }, "rick", "prof")).toBe(true);
+    expect(sharedWith({ type: "all" }, "rick", "rick")).toBe(false);
+    expect(sharedWith({ type: "agents", ids: ["prof"] }, "rick", "prof")).toBe(true);
+    expect(sharedWith({ type: "agents", ids: ["prof"] }, "rick", "roger")).toBe(false);
+  });
+
+  it("stores sharing cleaned: real agents only, no owner, no repeats, empty means private", () => {
+    const all = ["rick", "prof", "roger"];
+    expect(normalizeShare({ type: "agents", ids: ["rick", "nobody", "prof", "prof"] }, "rick", all)).toEqual({ type: "agents", ids: ["prof"] });
+    expect(normalizeShare({ type: "agents", ids: ["rick", "nobody"] }, "rick", all)).toEqual({ type: "none" });
+    expect(normalizeShare({ type: "all" }, "rick", all)).toEqual({ type: "all" });
+  });
+
+  it("knows whose list a change reaches", () => {
+    const all = ["rick", "prof", "roger"];
+    expect(affectedAgents([{ agentId: "rick", share: { type: "none" } }], all)).toEqual(["rick"]);
+    expect(affectedAgents([{ agentId: "rick", share: { type: "agents", ids: ["prof"] } }], all).sort()).toEqual(["prof", "rick"]);
+    expect(affectedAgents([{ agentId: "rick", share: { type: "all" } }], all).sort()).toEqual(["prof", "rick", "roger"]);
   });
 });

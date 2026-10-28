@@ -11,7 +11,7 @@ use super::signals::{Feedback, Signal};
 use super::{MAX_ENTRIES, MAX_TEXT_CHARS, clean_text, looks_secret};
 use crate::db::Db;
 use crate::error::Result;
-use crate::model::{Agent, AgentMemory, MemoryKind, MemorySource};
+use crate::model::{Agent, AgentMemory, MemoryKind, MemoryShare, MemorySource};
 use crate::util::{extract_json_object, new_id, truncate};
 
 /// Most edits one learner call may make.
@@ -123,8 +123,9 @@ pub fn notes_shown(all: &[AgentMemory]) -> Vec<&AgentMemory> {
     locked
 }
 
+/// What the learner must leave alone: what the user pinned, wrote, edited or chose to share with other agents.
 fn is_locked(m: &AgentMemory) -> bool {
-    m.pinned || m.source != MemorySource::Auto
+    m.pinned || m.source != MemorySource::Auto || m.share.is_shared()
 }
 
 pub fn user_prompt(agent: &Agent, shown: &[&AgentMemory], project: Option<&str>, signals: &[Feedback]) -> String {
@@ -236,6 +237,7 @@ pub fn apply(db: &Db, agent_id: &str, project: Option<&str>, explicit: bool, sho
                     project: if project_only { project.map(str::to_string) } else { None },
                     source: if explicit { MemorySource::Explicit } else { MemorySource::Auto },
                     pinned: false,
+                    share: MemoryShare::None,
                     hits: 0,
                     created_at: 0,
                     updated_at: 0,
@@ -299,6 +301,7 @@ mod tests {
             project: None,
             source,
             pinned,
+            share: MemoryShare::None,
             hits: 0,
             created_at: 0,
             updated_at: 0,
@@ -398,6 +401,20 @@ mod tests {
         let out = apply(&db, &rick, None, false, &[], vec![Op::Add { kind: MemoryKind::Fact, text: "Dropped".into(), project_only: false }]).unwrap();
         assert!(out.added.is_empty() && !out.changed);
         assert_eq!(db.count_memories(&rick).unwrap(), MAX_ENTRIES);
+    }
+
+    #[test]
+    fn a_note_the_user_shared_is_theirs_and_the_learner_leaves_it_alone() {
+        let (db, rick) = db_with_agent();
+        let mut shared = note(&db, &rick, "Keep answers short", MemorySource::Auto, false);
+        shared.share = MemoryShare::All;
+        let shared = db.upsert_memory(&shared).unwrap();
+        let all = db.list_memories(&rick).unwrap();
+        let shown = notes_shown(&all);
+        assert!(user_prompt(&db.get_agent(&rick).unwrap(), &shown, None, &[]).contains("Keep answers short [locked]"));
+        let n = shown.iter().position(|m| m.id == shared.id).unwrap() + 1;
+        apply(&db, &rick, None, false, &shown, vec![Op::Update { id: n, text: "Rewritten".into(), kind: None }, Op::Delete { id: n }]).unwrap();
+        assert_eq!(db.get_memory(&shared.id).unwrap().text, "Keep answers short");
     }
 
     #[test]

@@ -53,7 +53,7 @@ describe("store event handling", () => {
 
   describe("when an agent learns", () => {
     const rick = { id: "a-rick", name: "Rick" } as Agent;
-    const note: AgentMemory = { id: "m1", agentId: "a-rick", kind: "style", text: "Use tabs", project: null, source: "auto", pinned: false, hits: 0, createdAt: 0, updatedAt: 0 };
+    const note: AgentMemory = { id: "m1", agentId: "a-rick", kind: "style", text: "Use tabs", project: null, source: "auto", pinned: false, share: { type: "none" }, hits: 0, createdAt: 0, updatedAt: 0 };
     const deleteAgentMemory = vi.fn().mockResolvedValue(undefined);
     const updateAgentMemory = vi.fn().mockResolvedValue(undefined);
 

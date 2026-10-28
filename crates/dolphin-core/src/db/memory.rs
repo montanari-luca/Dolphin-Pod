@@ -5,7 +5,7 @@ use crate::error::{CoreError, Result};
 use crate::model::{AgentMemory, MemoryKind, MemorySource};
 use crate::util::now_ms;
 
-const COLS: &str = "id, agent_id, kind, text, project, source, pinned, hits, created_at, updated_at";
+const COLS: &str = "id, agent_id, kind, text, project, source, pinned, hits, created_at, updated_at, share";
 
 fn row_to_memory(r: &Row) -> rusqlite::Result<AgentMemory> {
     Ok(AgentMemory {
@@ -19,6 +19,7 @@ fn row_to_memory(r: &Row) -> rusqlite::Result<AgentMemory> {
         hits: r.get(7)?,
         created_at: r.get(8)?,
         updated_at: r.get(9)?,
+        share: serde_json::from_str(&r.get::<_, String>(10)?).unwrap_or_default(),
     })
 }
 
@@ -36,6 +37,16 @@ impl Db {
             .query_row(&format!("SELECT {COLS} FROM agent_memory WHERE id = ?1 AND deleted = 0"), [id], row_to_memory)
             .optional()?
             .ok_or_else(|| CoreError::NotFound(format!("memory {id}")))
+    }
+
+    /// Notes other agents have shared with this one, oldest first. Their owners keep them; this agent is only sent them.
+    pub fn memories_shared_with(&self, agent_id: &str) -> Result<Vec<AgentMemory>> {
+        let conn = self.conn();
+        let mut st = conn.prepare(&format!(
+            "SELECT {COLS} FROM agent_memory WHERE deleted = 0 AND agent_id != ?1 AND share != '{{\"type\":\"none\"}}' ORDER BY created_at, id"
+        ))?;
+        let all = st.query_map([agent_id], row_to_memory)?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(all.into_iter().filter(|m| m.share.reaches(&m.agent_id, agent_id)).collect())
     }
 
     /// Whose memory this is, even after it was forgotten.
@@ -56,11 +67,11 @@ impl Db {
             m.created_at = m.updated_at;
         }
         self.conn().execute(
-            "INSERT INTO agent_memory (id, agent_id, kind, text, project, source, pinned, hits, created_at, updated_at, device_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+            "INSERT INTO agent_memory (id, agent_id, kind, text, project, source, pinned, hits, created_at, updated_at, device_id, share)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(id) DO UPDATE SET kind = excluded.kind, text = excluded.text, project = excluded.project,
                source = excluded.source, pinned = excluded.pinned, updated_at = excluded.updated_at,
-               device_id = excluded.device_id, deleted = 0",
+               device_id = excluded.device_id, share = excluded.share, deleted = 0",
             params![
                 m.id,
                 m.agent_id,
@@ -72,7 +83,8 @@ impl Db {
                 m.hits,
                 m.created_at,
                 m.updated_at,
-                self.device_id()
+                self.device_id(),
+                serde_json::to_string(&m.share).unwrap_or_else(|_| r#"{"type":"none"}"#.into())
             ],
         )?;
         Ok(m)

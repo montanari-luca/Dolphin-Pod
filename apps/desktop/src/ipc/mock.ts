@@ -22,7 +22,7 @@ import type {
   UsageStats,
   UserRole,
 } from "@dolphin/shared";
-import { MEMORY_MAX_ENTRIES, cleanMemoryText, cleanProject } from "@/lib/memory";
+import { MEMORY_MAX_ENTRIES, affectedAgents, cleanMemoryText, cleanProject, normalizeShare, sharedWith } from "@/lib/memory";
 import type { Backend, Settings } from "./api";
 
 const uid = () => crypto.randomUUID();
@@ -247,6 +247,8 @@ export function mockBackend(): MockBackend {
   const id = (slug: string) => `a-${slug}`;
   const memories: AgentMemory[] = [];
   const proposals: PersonaProposal[] = [];
+  /** Tell the UI that these notes changed: their owners' lists and those of every agent they are shared with. */
+  const tell = (notes: AgentMemory[]) => affectedAgents(notes, agents.map((a) => a.id)).forEach((agentId) => emit({ type: "memoriesChanged", agentId }));
   const chats: Chat[] = [
     ["Coding", "code", ["rick", "jordan", "ducky", "viktor", "prof", "robert", "amelia", "council"]],
     [
@@ -459,10 +461,10 @@ export function mockBackend(): MockBackend {
         throw `this agent already remembers ${MEMORY_MAX_ENTRIES} things; forget some first`;
       }
       const m: AgentMemory = {
-        id: uid(), agentId, kind, text: clean, project: cleanProject(project), source: "explicit", pinned: false, hits: 0, createdAt: now(), updatedAt: now(),
+        id: uid(), agentId, kind, text: clean, project: cleanProject(project), source: "explicit", pinned: false, share: { type: "none" }, hits: 0, createdAt: now(), updatedAt: now(),
       };
       memories.push(m);
-      emit({ type: "memoriesChanged", agentId });
+      tell([m]);
       return structuredClone(m);
     },
     async updateAgentMemory(next) {
@@ -472,21 +474,25 @@ export function mockBackend(): MockBackend {
       const text = cleanMemoryText(next.text);
       const project = cleanProject(next.project);
       const reworked = text !== cur.text || next.kind !== cur.kind || project !== cur.project;
-      memories[i] = { ...cur, text, kind: next.kind, project, pinned: next.pinned, source: reworked ? "edited" : cur.source, updatedAt: now() };
-      emit({ type: "memoriesChanged", agentId: cur.agentId });
+      const share = normalizeShare(next.share, cur.agentId, agents.map((a) => a.id));
+      memories[i] = { ...cur, text, kind: next.kind, project, pinned: next.pinned, share, source: reworked ? "edited" : cur.source, updatedAt: now() };
+      tell([cur, memories[i]]);
       return structuredClone(memories[i]);
     },
     async deleteAgentMemory(id) {
       const i = memories.findIndex((m) => m.id === id);
       if (i < 0) throw `memory ${id} not found`;
       const [gone] = memories.splice(i, 1);
-      emit({ type: "memoriesChanged", agentId: gone.agentId });
+      tell([gone]);
     },
     async forgetAgentMemories(agentId) {
-      const n = memories.filter((m) => m.agentId === agentId).length;
+      const gone = memories.filter((m) => m.agentId === agentId);
       for (let i = memories.length - 1; i >= 0; i--) if (memories[i].agentId === agentId) memories.splice(i, 1);
-      if (n > 0) emit({ type: "memoriesChanged", agentId });
-      return n;
+      if (gone.length > 0) tell(gone);
+      return gone.length;
+    },
+    async listSharedMemories(agentId) {
+      return structuredClone(memories.filter((m) => sharedWith(m.share, m.agentId, agentId)));
     },
     async personaProposal(agentId) {
       const p = proposals.find((x) => x.agentId === agentId);

@@ -2,7 +2,7 @@
 
 Every agent is its own character. You can give it a **persona**, it keeps its own **memory** of what it knows about you,
 and it **learns** from how you work with it: what you correct, undo, decline and rate. Nothing an agent learns is
-shared with another agent, so Rick can be terse while Prof stays patient.
+shared with another agent unless you choose to share it, so Rick can be terse while Prof stays patient.
 
 Open **Settings → Agents**, pick an agent, and you will find the persona, the learning switch and the memory list.
 
@@ -49,8 +49,18 @@ of them; once it has many, only the ones that share words with your request come
 from carrying notes they don't need, and it costs no extra model call.
 
 Notes arrive after the chat history, not as part of the agent's instructions, so they never break the provider's prompt
-cache. An agent only ever sees its own notes. Your global **Preferences** (Settings → Preferences) are separate and
-still apply to every agent.
+cache. An agent is only sent its own notes, plus any that you shared with it (below). Your global **Preferences**
+(Settings → Preferences) are separate and still apply to every agent.
+
+### Sharing a note with other agents
+
+Some things are true for every agent: "keep answers under three sentences", "I work in Rust". Rather than teach each one,
+use the share menu on a note: **Private** (the default), **Shared with all agents**, or **Chosen agents…** to pick which.
+
+The note stays in its own agent's memory, where you edit, pin or take it back; the other agents are *sent* it along with
+their own notes, under the same rules (project scope, and relevance once there are many). It shows in their Memory
+section under **From other agents**, read-only, and doesn't count toward their 40. If an agent already has a note with the
+same text, it is sent once. A note you share counts as yours, so its agent's learner won't reword or remove it.
 
 ## Learning
 
@@ -99,7 +109,7 @@ learns: marked **learned**, shown in a toast with **Undo**, and never able to ch
 - To stop an agent learning on its own, turn off **Learn from my corrections** in its Memory section and press Save,
   or tell Roger. With it off, nothing is recorded and the `remember` tool is not offered. "Remember that…" and the
   memory list keep working.
-- Only the agent you were talking to learns. The others are untouched.
+- Only the agent you were talking to learns. The others are untouched, unless a note you shared reaches them.
 
 ### Thumbs
 

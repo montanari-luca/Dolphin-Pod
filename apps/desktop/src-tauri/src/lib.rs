@@ -76,6 +76,11 @@ fn list_agent_memories(core: State<CoreRef>, agent_id: String) -> Res<Vec<AgentM
 }
 
 #[tauri::command]
+fn list_shared_memories(core: State<CoreRef>, agent_id: String) -> Res<Vec<AgentMemory>> {
+    core.list_shared_memories(&agent_id)
+}
+
+#[tauri::command]
 fn add_agent_memory(core: State<CoreRef>, agent_id: String, kind: MemoryKind, text: String, project: Option<String>) -> Res<AgentMemory> {
     core.add_agent_memory(&agent_id, kind, &text, project.as_deref())
 }
@@ -484,6 +489,7 @@ pub fn run() {
             list_agents,
             update_agent,
             list_agent_memories,
+            list_shared_memories,
             add_agent_memory,
             update_agent_memory,
             delete_agent_memory,

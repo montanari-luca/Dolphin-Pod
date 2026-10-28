@@ -676,6 +676,7 @@ fn memory(agent_id: &str, text: &str) -> crate::model::AgentMemory {
         project: Some("dolphin-pod".into()),
         source: crate::model::MemorySource::Auto,
         pinned: false,
+        share: crate::model::MemoryShare::None,
         hits: 0,
         created_at: 0,
         updated_at: 0,
@@ -711,10 +712,13 @@ async fn an_agents_memory_follows_it_to_the_other_device_but_using_it_is_not_an_
     // Editing it is a change.
     let mut edited = a.db.get_memory(&m.id).unwrap();
     edited.text = "No emojis, ever. Plain text only".into();
+    edited.share = crate::model::MemoryShare::All;
     a.db.upsert_memory(&edited).unwrap();
     assert_eq!(dirty_memories(&a), 1);
     settle(&[&a, &b]).await;
     assert_eq!(b.db.get_memory(&m.id).unwrap().text, "No emojis, ever. Plain text only");
+    assert_eq!(b.db.get_memory(&m.id).unwrap().share, crate::model::MemoryShare::All, "who a note is shared with travels with it");
+    assert_eq!(b.db.memories_shared_with(&agent(&b, "roger").id).unwrap().len(), 1);
 
     // Forgetting it on the other device removes it here.
     assert!(b.db.delete_memory(&m.id).unwrap());

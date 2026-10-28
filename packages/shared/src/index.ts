@@ -17,6 +17,7 @@ export type { GradientStop } from "./generated/GradientStop";
 export type { LanEndpoint } from "./generated/LanEndpoint";
 export type { Message } from "./generated/Message";
 export type { MemoryKind } from "./generated/MemoryKind";
+export type { MemoryShare } from "./generated/MemoryShare";
 export type { MemorySource } from "./generated/MemorySource";
 export type { MessageKind } from "./generated/MessageKind";
 export type { MessageStatus } from "./generated/MessageStatus";
