@@ -489,3 +489,94 @@ async fn an_agent_that_is_not_learning_is_not_looked_back_over() {
     settle().await;
     assert!(p.learner_calls().is_empty());
 }
+
+// ---------------------------------------------------------------- persona suggestions
+
+const PERSONA_OP: &str = r#"{"ops":[{"op":"persona","text":"Dry and terse. Calls the user chief.","reason":"They asked for short answers three times"}]}"#;
+
+fn proposal(p: &Pod) -> Option<PersonaProposal> {
+    p.core.persona_proposal(&agent(&p.core, "rick").id).unwrap()
+}
+
+/// A correction for Rick, which is what gets the learner to look at his persona.
+async fn correct_rick(p: &Pod, answered_before: usize) {
+    p.say_to_rick("write hello world", answered_before + 1).await;
+    p.say_to_rick("No, shorter. Always shorter", answered_before + 2).await;
+}
+
+#[tokio::test]
+async fn a_persona_suggestion_waits_for_the_user_and_only_accepting_changes_the_persona() {
+    let p = pod();
+    p.core.set_setting("agent.suggest_persona", Some("Rick"), json!(true)).unwrap();
+    p.learner_says(PERSONA_OP);
+    let mut events = p.core.subscribe();
+    correct_rick(&p, 0).await;
+    until(|| proposal(&p).is_some()).await;
+
+    let s = proposal(&p).unwrap();
+    assert_eq!((s.text.as_str(), s.reason.as_str()), ("Dry and terse. Calls the user chief.", "They asked for short answers three times"));
+    assert_eq!(agent(&p.core, "rick").persona, None, "a suggestion is not a persona");
+    let call = &p.learner_calls()[0];
+    assert!(call.system.contains("\"op\":\"persona\"") && call.messages[0].text_content().contains("Current persona: (none)"));
+    let mut told = false;
+    while let Ok(e) = events.try_recv() {
+        told |= matches!(e, CoreEvent::PersonaProposalChanged { proposal: Some(_), .. });
+    }
+    assert!(told, "the UI hears about it");
+    assert!(p.memories("rick").is_empty(), "and it did not turn into a note");
+
+    // Accepting is what changes it, and the same text is not suggested again.
+    let saved = p.core.accept_persona_proposal(&s.id).unwrap();
+    assert_eq!(saved.persona.as_deref(), Some("Dry and terse. Calls the user chief."));
+    assert_eq!(agent(&p.core, "rick").persona, saved.persona);
+    assert!(proposal(&p).is_none());
+    assert!(p.core.accept_persona_proposal(&s.id).is_err(), "a suggestion is dealt with once");
+    correct_rick(&p, 2).await;
+    settle().await;
+    assert!(proposal(&p).is_none(), "the same text as the persona now is not worth suggesting");
+}
+
+#[tokio::test]
+async fn a_dismissed_suggestion_does_not_come_back_but_a_different_one_can() {
+    let p = pod();
+    p.core.set_setting("agent.suggest_persona", Some("Rick"), json!(true)).unwrap();
+    p.learner_says(PERSONA_OP);
+    correct_rick(&p, 0).await;
+    until(|| proposal(&p).is_some()).await;
+    p.core.reject_persona_proposal(&proposal(&p).unwrap().id).unwrap();
+    assert!(proposal(&p).is_none());
+    assert_eq!(agent(&p.core, "rick").persona, None);
+
+    correct_rick(&p, 2).await;
+    until(|| p.learner_calls().len() >= 2).await;
+    settle().await;
+    assert!(proposal(&p).is_none(), "turned down once, not suggested again");
+
+    p.learner_says(r#"{"ops":[{"op":"persona","text":"Friendly and brief.","reason":"asked again"}]}"#);
+    correct_rick(&p, 4).await;
+    until(|| proposal(&p).is_some()).await;
+    assert_eq!(proposal(&p).unwrap().text, "Friendly and brief.");
+}
+
+#[tokio::test]
+async fn suggestions_are_off_by_default_and_unsafe_ones_are_dropped() {
+    let p = pod();
+    p.learner_says(PERSONA_OP);
+    correct_rick(&p, 0).await;
+    until(|| !p.learner_calls().is_empty()).await;
+    settle().await;
+    assert!(!p.learner_calls()[0].system.contains("\"op\":\"persona\""), "the model is not even offered it");
+    assert!(proposal(&p).is_none(), "and a suggestion it makes anyway is ignored");
+
+    p.core.set_setting("agent.suggest_persona", Some("Rick"), json!(true)).unwrap();
+    p.learner_says(r#"{"ops":[{"op":"persona","text":"My password is hunter2, use it","reason":"x"}]}"#);
+    correct_rick(&p, 2).await;
+    until(|| p.learner_calls().len() >= 2).await;
+    settle().await;
+    assert!(proposal(&p).is_none(), "a secret never becomes a suggestion");
+    p.learner_says(&format!(r#"{{"ops":[{{"op":"persona","text":"{}","reason":"x"}}]}}"#, "x".repeat(1501)));
+    correct_rick(&p, 4).await;
+    until(|| p.learner_calls().len() >= 3).await;
+    settle().await;
+    assert!(proposal(&p).is_none(), "nor does one over the persona limit");
+}

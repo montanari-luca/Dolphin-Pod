@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use super::*;
-use crate::memory::learner::{self, MAX_SIGNALS, Op};
+use crate::memory::learner::{self, MAX_SIGNALS, Op, PromptOptions};
 use crate::memory::signals::{Feedback, Signal, looks_like_correction, remember_request};
 use crate::memory::{self, clean_text, looks_secret};
 use crate::providers::complete;
@@ -272,8 +272,8 @@ impl Core {
 
         let mut ops = Vec::new();
         if let Some((provider, mut req)) = self.utility_handle(&roger) {
-            let reflection = signals.iter().any(|f| f.signal == Signal::Reflection);
-            req.system = learner::system_prompt(explicit, reflection);
+            let options = PromptOptions { explicit, reflection: signals.iter().any(|f| f.signal == Signal::Reflection), persona: agent.suggest_persona && !explicit };
+            req.system = learner::system_prompt(options);
             req.messages = vec![ChatMessage::user(learner::user_prompt(agent, &shown, project.as_deref(), signals))];
             req.json_mode = true;
             req.tools.clear();
@@ -291,6 +291,14 @@ impl Core {
                 .map(|t| Op::Add { kind: MemoryKind::Fact, text: t.to_string(), project_only: false })
                 .collect();
         }
+        // A persona suggestion is not a note: it waits for the user. Only offered to the model when the agent may suggest.
+        let (persona_ops, ops): (Vec<Op>, Vec<Op>) = ops.into_iter().partition(|o| matches!(o, Op::Persona { .. }));
+        if agent.suggest_persona
+            && !explicit
+            && let Some(Op::Persona { text, reason }) = persona_ops.into_iter().next()
+        {
+            self.propose_persona(agent, &text, &reason);
+        }
         if ops.is_empty() {
             return;
         }
@@ -304,6 +312,20 @@ impl Core {
         if outcome.changed {
             self.emit(CoreEvent::MemoriesChanged { agent_id: agent.id.clone() });
         }
+    }
+
+    /// Keep a persona the learner suggested, for the user to accept or dismiss. Nothing here changes the persona.
+    pub(crate) fn propose_persona(&self, agent: &Agent, text: &str, reason: &str) -> Option<PersonaProposal> {
+        let text = settings::clean_persona(text)?;
+        let same_as_now = agent.persona.as_deref().is_some_and(|p| p.trim().eq_ignore_ascii_case(&text));
+        if text.chars().count() > settings::PERSONA_MAX_CHARS || looks_secret(&text) || same_as_now || self.db.persona_was_rejected(&agent.id, &text).unwrap_or(true) {
+            return None;
+        }
+        let reason = clean_text(reason).map(|r| truncate(&r, 200)).unwrap_or_default();
+        let proposal = PersonaProposal { id: new_id(), agent_id: agent.id.clone(), text, reason, created_at: now_ms() };
+        self.db.insert_persona_proposal(&proposal).ok()?;
+        self.emit(CoreEvent::PersonaProposalChanged { agent_id: agent.id.clone(), proposal: Some(proposal.clone()) });
+        Some(proposal)
     }
 
     /// The `remember` tool: the agent saves one lasting note. What the tool answers is what the model reads.

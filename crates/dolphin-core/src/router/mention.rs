@@ -43,6 +43,7 @@ mod tests {
             ios_model: None,
             persona: None,
             learning: true,
+            suggest_persona: false,
             sort: 0,
             updated_at: 0,
         }

@@ -10,6 +10,7 @@ import { cn } from "@/lib/cn";
 import { formatDuration, formatTokens } from "@/lib/format";
 import { useApp } from "@/store/app";
 import { AgentMemoryPanel } from "./AgentMemory";
+import { PersonaProposalCard } from "./PersonaProposal";
 import { PageHeader } from "./SettingsView";
 
 /** Matches the core limit (settings::PERSONA_MAX_CHARS). */
@@ -111,6 +112,8 @@ function AgentEditor({ agent }: { agent: Agent }) {
         </Field>
       )}
 
+      <PersonaProposalCard agent={agent} blocked={dirty} />
+
       <Field
         label="Persona"
         hint="How this agent sounds and behaves: tone, quirks, how it addresses you. It is added on top of what the agent is built to do, so it can't remove its skills."
@@ -124,7 +127,13 @@ function AgentEditor({ agent }: { agent: Agent }) {
         />
       </Field>
 
-      <AgentMemoryPanel agent={agent} learning={draft.learning} onLearningChange={(learning) => setDraft({ ...draft, learning })} />
+      <AgentMemoryPanel
+        agent={agent}
+        learning={draft.learning}
+        onLearningChange={(learning) => setDraft({ ...draft, learning })}
+        suggestPersona={draft.suggestPersona}
+        onSuggestPersonaChange={(suggestPersona) => setDraft({ ...draft, suggestPersona })}
+      />
 
       <Field label="Color">
         <GradientEditor value={draft.color} onChange={(color) => setDraft({ ...draft, color })} />

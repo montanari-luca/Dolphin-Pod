@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Agent, AgentMemory, Message } from "@dolphin/shared";
+import type { Agent, AgentMemory, Message, PersonaProposal } from "@dolphin/shared";
 import type { Backend } from "@/ipc/api";
 import { useApp } from "./app";
 
@@ -87,6 +87,29 @@ describe("store event handling", () => {
       useApp.getState().apply({ type: "memoryLearned", memory: note, previousText: null });
       await useApp.getState().toasts[0].action!.run();
       expect(useApp.getState().toasts.map((x) => x.level)).toContain("error");
+    });
+  });
+
+  describe("when an agent suggests a persona", () => {
+    const rick = { id: "a-rick", name: "Rick" } as Agent;
+    const proposal: PersonaProposal = { id: "p1", agentId: "a-rick", text: "Dry and terse.", reason: "asked for short answers", createdAt: 0 };
+
+    beforeEach(() => useApp.setState({ toasts: [], agents: [rick], proposalVersion: {}, focusAgentId: null }));
+
+    it("tells the user, and Review opens that agent's page", () => {
+      useApp.getState().apply({ type: "personaProposalChanged", agentId: "a-rick", proposal });
+      const [t] = useApp.getState().toasts;
+      expect(t.text).toBe("Rick suggests a new persona for itself");
+      expect(t.action?.label).toBe("Review");
+      t.action!.run();
+      expect(useApp.getState().view).toBe("settings");
+      expect(useApp.getState().focusAgentId).toBe("a-rick");
+    });
+
+    it("reloads the card when a suggestion is dealt with, without another toast", () => {
+      useApp.getState().apply({ type: "personaProposalChanged", agentId: "a-rick", proposal: null });
+      expect(useApp.getState().proposalVersion).toEqual({ "a-rick": 1 });
+      expect(useApp.getState().toasts).toEqual([]);
     });
   });
 });

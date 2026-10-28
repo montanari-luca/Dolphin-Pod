@@ -6,6 +6,7 @@ mod feedback;
 mod memory;
 mod messages;
 mod misc;
+mod persona;
 mod providers;
 mod roles;
 
@@ -30,6 +31,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migration_0006_persona.sql"),
     include_str!("migration_0007_agent_memory.sql"),
     include_str!("migration_0008_feedback_learning.sql"),
+    include_str!("migration_0009_persona_proposals.sql"),
 ];
 
 #[derive(Clone)]

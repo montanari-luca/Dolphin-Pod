@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::model::{ActionLogEntry, Agent, AgentMemory, Chat, Message, PermissionGrant, UsageStats, UserRole};
+use crate::model::{ActionLogEntry, Agent, AgentMemory, Chat, PersonaProposal, Message, PermissionGrant, UsageStats, UserRole};
 use crate::settings::SettingChange;
 use crate::sync::manager::SyncStatus;
 
@@ -54,6 +54,8 @@ pub enum CoreEvent {
     MemoriesChanged { agent_id: String },
     /// An agent's learner saved or reworded a note. `previous_text` is what a reworded note said before (for Undo).
     MemoryLearned { memory: AgentMemory, previous_text: Option<String> },
+    /// An agent suggested a new persona for itself (`Some`, waiting for the user) or the suggestion was dealt with (`None`).
+    PersonaProposalChanged { agent_id: String, proposal: Option<PersonaProposal> },
     RolesChanged { roles: Vec<UserRole> },
     SettingChanged { change: SettingChange },
     UsageUpdated { usage: UsageStats },

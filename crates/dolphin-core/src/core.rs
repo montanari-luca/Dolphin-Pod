@@ -287,6 +287,7 @@ impl Core {
         merged.ios_model = a.ios_model;
         merged.persona = a.persona.as_deref().and_then(settings::clean_persona);
         merged.learning = a.learning;
+        merged.suggest_persona = a.suggest_persona;
         if merged.persona.as_ref().is_some_and(|p| p.chars().count() > settings::PERSONA_MAX_CHARS) {
             return Err(CoreError::invalid(format!("the persona is limited to {} characters", settings::PERSONA_MAX_CHARS)));
         }
@@ -359,6 +360,32 @@ impl Core {
             self.emit(CoreEvent::MemoriesChanged { agent_id: agent_id.to_string() });
         }
         Ok(n)
+    }
+
+    /// The persona change an agent has suggested for itself, if one is waiting for the user.
+    pub fn persona_proposal(&self, agent_id: &str) -> Result<Option<PersonaProposal>> {
+        self.db.get_agent(agent_id)?;
+        self.db.pending_persona_proposal(agent_id)
+    }
+
+    /// The user accepts a suggestion: it becomes the agent's persona. This is the only way a suggestion takes effect.
+    pub fn accept_persona_proposal(&self, id: &str) -> Result<Agent> {
+        let proposal = self.db.get_persona_proposal(id)?;
+        let mut agent = self.db.get_agent(&proposal.agent_id)?;
+        agent.persona = Some(proposal.text.clone());
+        let saved = self.db.upsert_agent(&agent)?;
+        self.db.resolve_persona_proposal(id, true)?;
+        self.emit(CoreEvent::AgentChanged { agent: saved.clone() });
+        self.emit(CoreEvent::PersonaProposalChanged { agent_id: saved.id.clone(), proposal: None });
+        Ok(saved)
+    }
+
+    /// The user turns a suggestion down. The same text is not suggested again.
+    pub fn reject_persona_proposal(&self, id: &str) -> Result<()> {
+        let proposal = self.db.get_persona_proposal(id)?;
+        self.db.resolve_persona_proposal(id, false)?;
+        self.emit(CoreEvent::PersonaProposalChanged { agent_id: proposal.agent_id, proposal: None });
+        Ok(())
     }
 
     fn memory_text(text: &str) -> Result<String> {

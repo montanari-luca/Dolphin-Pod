@@ -91,6 +91,21 @@ fn delete_agent_memory(core: State<CoreRef>, id: String) -> Res<()> {
 }
 
 #[tauri::command]
+fn persona_proposal(core: State<CoreRef>, agent_id: String) -> Res<Option<PersonaProposal>> {
+    core.persona_proposal(&agent_id)
+}
+
+#[tauri::command]
+fn accept_persona_proposal(core: State<CoreRef>, id: String) -> Res<Agent> {
+    core.accept_persona_proposal(&id)
+}
+
+#[tauri::command]
+fn reject_persona_proposal(core: State<CoreRef>, id: String) -> Res<()> {
+    core.reject_persona_proposal(&id)
+}
+
+#[tauri::command]
 fn rate_message(core: State<CoreRef>, message_id: String, rating: Option<Rating>) -> Res<()> {
     core.rate_message(&message_id, rating)
 }
@@ -474,6 +489,9 @@ pub fn run() {
             delete_agent_memory,
             forget_agent_memories,
             rate_message,
+            persona_proposal,
+            accept_persona_proposal,
+            reject_persona_proposal,
             list_chats,
             create_chat,
             update_chat,

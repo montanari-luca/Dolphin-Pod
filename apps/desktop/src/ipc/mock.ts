@@ -4,6 +4,7 @@ import type {
   Agent,
   AgentColor,
   AgentMemory,
+  PersonaProposal,
   Automation,
   Chat,
   CoreEvent,
@@ -219,7 +220,10 @@ function setSync(patch: Partial<SyncStatus>) {
   emitSync?.();
 }
 
-export function mockBackend(): Backend {
+/** The mock core, plus a helper that stands in for an agent's learner so the UI can be exercised in a browser. */
+export type MockBackend = Backend & { proposePersona(agentId: string, text: string, reason: string): void };
+
+export function mockBackend(): MockBackend {
   const listeners: ((e: CoreEvent) => void)[] = [];
   const emit = (e: CoreEvent) => listeners.forEach((l) => l(e));
   emitSync = () => emit({ type: "syncStatusChanged", status: { ...syncState } });
@@ -236,11 +240,13 @@ export function mockBackend(): Backend {
     iosModel: null,
     persona: null,
     learning: specialty !== "council",
+    suggestPersona: false,
     sort: i,
     updatedAt: now(),
   }));
   const id = (slug: string) => `a-${slug}`;
   const memories: AgentMemory[] = [];
+  const proposals: PersonaProposal[] = [];
   const chats: Chat[] = [
     ["Coding", "code", ["rick", "jordan", "ducky", "viktor", "prof", "robert", "amelia", "council"]],
     [
@@ -481,6 +487,33 @@ export function mockBackend(): Backend {
       for (let i = memories.length - 1; i >= 0; i--) if (memories[i].agentId === agentId) memories.splice(i, 1);
       if (n > 0) emit({ type: "memoriesChanged", agentId });
       return n;
+    },
+    async personaProposal(agentId) {
+      const p = proposals.find((x) => x.agentId === agentId);
+      return p ? structuredClone(p) : null;
+    },
+    async acceptPersonaProposal(proposalId) {
+      const i = proposals.findIndex((x) => x.id === proposalId);
+      if (i < 0) throw `persona suggestion ${proposalId} not found`;
+      const [p] = proposals.splice(i, 1);
+      const a = agents.find((x) => x.id === p.agentId)!;
+      a.persona = p.text;
+      a.updatedAt = now();
+      emit({ type: "agentChanged", agent: structuredClone(a) });
+      emit({ type: "personaProposalChanged", agentId: p.agentId, proposal: null });
+      return structuredClone(a);
+    },
+    async rejectPersonaProposal(proposalId) {
+      const i = proposals.findIndex((x) => x.id === proposalId);
+      if (i < 0) throw `persona suggestion ${proposalId} not found`;
+      const [p] = proposals.splice(i, 1);
+      emit({ type: "personaProposalChanged", agentId: p.agentId, proposal: null });
+    },
+    /** Browser-only helper: stands in for an agent's learner suggesting a persona, so the UI can be exercised. */
+    proposePersona(agentId: string, text: string, reason: string) {
+      const p: PersonaProposal = { id: uid(), agentId, text, reason, createdAt: now() };
+      proposals.splice(0, proposals.length, ...proposals.filter((x) => x.agentId !== agentId), p);
+      emit({ type: "personaProposalChanged", agentId, proposal: structuredClone(p) });
     },
     async rateMessage(messageId, rating) {
       for (const list of messages.values()) {

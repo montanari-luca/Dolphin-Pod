@@ -116,6 +116,7 @@ pub mod keys {
     pub const AGENT_IMAGE_MODEL: &str = "agent.image_model";
     pub const AGENT_PERSONA: &str = "agent.persona";
     pub const AGENT_LEARNING: &str = "agent.learning";
+    pub const AGENT_SUGGEST_PERSONA: &str = "agent.suggest_persona";
 }
 
 /// Longest persona the user may write; it is sent with every request the agent handles.
@@ -180,6 +181,7 @@ pub fn registry() -> Vec<SettingDef> {
         def(keys::AGENT_IMAGE_MODEL, "Image model", "Image-generation model (image specialist only).", Agent, Model, Value::Null).nullable(),
         def(keys::AGENT_PERSONA, "Persona", "The agent's voice and character (tone, quirks, how it addresses you). Added on top of its built-in specialty; leave empty for none.", Agent,
             Text { max_len: PERSONA_MAX_CHARS }, Value::Null).nullable(),
+        def(keys::AGENT_SUGGEST_PERSONA, "Suggest persona changes", "Whether the agent may suggest changes to its own persona from what it learns about you. A suggestion only ever takes effect when you accept it. Needs learning to be on.", Agent, Bool, json!(false)),
         def(keys::AGENT_LEARNING, "Learning", "Whether the agent learns from your corrections, reverts and ratings. Saying \"remember that...\" still works when this is off.", Agent, Bool, json!(true)),
     ]
 }
@@ -419,6 +421,7 @@ pub fn set(db: &Db, key: &str, target: Option<&str>, value: Value) -> Result<Set
                 keys::AGENT_IMAGE_MODEL => agent.image_model = serde_json::from_value(v)?,
                 keys::AGENT_PERSONA => agent.persona = v.as_str().and_then(clean_persona),
                 keys::AGENT_LEARNING => agent.learning = v.as_bool().unwrap_or(true),
+                keys::AGENT_SUGGEST_PERSONA => agent.suggest_persona = v.as_bool().unwrap_or(false),
                 keys::AGENT_EFFORT => {
                     let m = agent.model.as_mut().ok_or_else(|| CoreError::invalid("set a model before the effort"))?;
                     m.effort = serde_json::from_value(v)?;

@@ -29,4 +29,9 @@ persona: string | null,
  * Whether the agent learns from your corrections, reverts and ratings (and may save notes with its `remember` tool).
  * Saying "remember that..." and the Memory list work either way.
  */
-learning: boolean, sort: number, updatedAt: number, };
+learning: boolean, 
+/**
+ * Whether the agent's learner may suggest changes to its persona. Suggestions only ever become the persona when
+ * the user accepts them. Needs `learning` on, since suggestions come out of the learner.
+ */
+suggestPersona: boolean, sort: number, updatedAt: number, };

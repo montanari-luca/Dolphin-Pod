@@ -4,7 +4,7 @@ import { filterAgents, insertMention, mentionAt, splitMentions } from "./mention
 
 const agent = (slug: string, name: string, role: Agent["role"] = "specialist"): Agent => ({
   id: slug, slug, name, role, specialty: slug === "lincoln" ? "orchestrator" : "coder", job: "", color: { type: "solid", color: "#fff" },
-  model: null, imageModel: null, iosModel: null, persona: null, learning: true, sort: 0, updatedAt: 0,
+  model: null, imageModel: null, iosModel: null, persona: null, learning: true, suggestPersona: false, sort: 0, updatedAt: 0,
 });
 const agents = [agent("roger", "Roger", "moderator"), agent("lincoln", "Lincoln", "orchestrator"), agent("rick", "Rick"), agent("prof", "Prof")];
 

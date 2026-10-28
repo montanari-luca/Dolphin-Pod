@@ -10,7 +10,13 @@ import { useApp } from "@/store/app";
  * What one agent has learned about you. Changes to the list save as you go; only this agent ever sees them.
  * The learning switch belongs to the agent itself, so it goes through the editor's draft and Save like its other settings.
  */
-export function AgentMemoryPanel({ agent, learning, onLearningChange }: { agent: Agent; learning: boolean; onLearningChange: (on: boolean) => void }) {
+export function AgentMemoryPanel({ agent, learning, onLearningChange, suggestPersona, onSuggestPersonaChange }: {
+  agent: Agent;
+  learning: boolean;
+  onLearningChange: (on: boolean) => void;
+  suggestPersona: boolean;
+  onSuggestPersonaChange: (on: boolean) => void;
+}) {
   const api = useApp((s) => s.api);
   const toast = useApp((s) => s.toast);
   const version = useApp((s) => s.memoryVersion[agent.id] ?? 0);
@@ -68,6 +74,17 @@ export function AgentMemoryPanel({ agent, learning, onLearningChange }: { agent:
             ? `${agent.name} notes lasting preferences when you correct them, undo their changes, decline an action or give a thumbs down, and can save notes themself. Notes it writes are marked “learned”.`
             : `${agent.name} won't add notes on their own. Saying “remember that…” and the list below still work.`}
           {learning !== agent.learning && <span className="text-warning"> Press Save to apply.</span>}
+        </div>
+      </div>
+
+      <div className="flex items-start gap-2.5 rounded-md bg-hover/60 px-2.5 py-2">
+        <Switch checked={suggestPersona && learning} disabled={!learning} onChange={onSuggestPersonaChange} label={`${agent.name} may suggest persona changes`} />
+        <div className="min-w-0 flex-1 text-[12px] leading-relaxed text-muted">
+          <span className="font-medium text-fg">Let it suggest persona changes</span>
+          <br />
+          {`${agent.name} may propose a rewrite of its own persona when you have shown it, repeatedly, how you want it to sound. You see the suggestion first; it only takes effect if you accept it.`}
+          {!learning && " Needs learning to be on."}
+          {learning && suggestPersona !== agent.suggestPersona && <span className="text-warning"> Press Save to apply.</span>}
         </div>
       </div>
 

@@ -11,6 +11,12 @@ Open **Settings → Agents**, pick an agent, and you will find the persona, the 
 A persona is a few lines (up to 1,500 characters) about how an agent sounds and behaves: tone, quirks, how it
 addresses you. For example: "Dry and to the point. Skips the pleasantries and calls me chief."
 
+An agent never rewrites its own persona. If you want it to *suggest* changes, turn on **Let it suggest persona changes**
+in its Memory section (and press Save). When what you have shown it, repeatedly, points to a different tone, it proposes
+a rewritten persona with a one-line reason. A card appears above the persona field and a toast tells you; **Accept**
+makes it the persona, **Dismiss** throws it away, and a text you dismissed is not suggested again. Only one suggestion
+waits at a time, and it needs learning to be on.
+
 The persona is added on top of what the agent is built to do. It changes how the agent sounds, never what it is
 allowed to do, so it can't remove a skill or a safety rule. You can also ask Roger to change it in chat. It syncs
 between your devices with the rest of the agent.
@@ -87,6 +93,7 @@ learns: marked **learned**, shown in a toast with **Undo**, and never able to ch
 
 ### You stay in charge
 
+- A learner can never change a persona, only suggest one for you to accept.
 - A learner can reword or remove only the notes **it wrote itself**. Never the ones you added, edited or pinned.
 - When an agent reaches 40 notes, its least-used learned note expires first.
 - To stop an agent learning on its own, turn off **Learn from my corrections** in its Memory section and press Save,

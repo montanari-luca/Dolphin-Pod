@@ -46,4 +46,27 @@ describe("mock agent memory", () => {
     const mine = msgs.find((m) => !m.agentId)!;
     await expect(api.rateMessage(mine.id, "up")).rejects.toMatch(/only an agent/);
   });
+
+  it("keeps a persona suggestion apart from the persona until it is accepted", async () => {
+    const api = mockBackend();
+    const events: CoreEvent[] = [];
+    await api.subscribe((e) => events.push(e));
+    const [rick] = await api.listAgents();
+
+    api.proposePersona(rick.id, "Dry and terse.", "asked for short answers");
+    expect((await api.personaProposal(rick.id))?.text).toBe("Dry and terse.");
+    expect((await api.listAgents())[0].persona).toBeNull();
+
+    const dismissed = (await api.personaProposal(rick.id))!;
+    await api.rejectPersonaProposal(dismissed.id);
+    expect(await api.personaProposal(rick.id)).toBeNull();
+    expect((await api.listAgents())[0].persona).toBeNull();
+
+    api.proposePersona(rick.id, "Friendly and brief.", "asked again");
+    const saved = await api.acceptPersonaProposal((await api.personaProposal(rick.id))!.id);
+    expect(saved.persona).toBe("Friendly and brief.");
+    expect(await api.personaProposal(rick.id)).toBeNull();
+    await expect(api.acceptPersonaProposal(dismissed.id)).rejects.toMatch(/not found/);
+    expect(events.filter((e) => e.type === "personaProposalChanged")).toHaveLength(4);
+  });
 });

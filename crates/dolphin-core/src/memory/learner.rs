@@ -23,15 +23,28 @@ const MAX_NOTES_SHOWN: usize = 30;
 /// Longest stretch of a reply or request quoted to the model.
 const EXCERPT_CHARS: usize = 700;
 
+/// What this learner call is allowed or asked to do beyond the basics.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PromptOptions {
+    /// The user explicitly asked for something to be remembered.
+    pub explicit: bool,
+    /// The signals include an excerpt of a finished conversation.
+    pub reflection: bool,
+    /// The agent's persona may be suggested for change (a proposal; the user decides).
+    pub persona: bool,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Op {
     Add { kind: MemoryKind, text: String, project_only: bool },
     Update { id: usize, text: String, kind: Option<MemoryKind> },
     Merge { ids: Vec<usize>, text: String, kind: Option<MemoryKind> },
     Delete { id: usize },
+    /// A suggested rewrite of the whole persona. Never applied: it becomes a proposal the user accepts or dismisses.
+    Persona { text: String, reason: String },
 }
 
-pub fn system_prompt(explicit: bool, reflection: bool) -> String {
+pub fn system_prompt(o: PromptOptions) -> String {
     let mut s = String::from(
         "You keep the private notes an AI assistant takes about its user so it works better for them next time. \
          You are given the assistant's current notes (numbered) and something that just happened. Decide whether the user \
@@ -53,13 +66,21 @@ pub fn system_prompt(explicit: bool, reflection: bool) -> String {
          - A thumbs up, a polite reply or an ordinary follow-up is not a lesson.\n\
          - At most 3 ops. If nothing lasting was shown, reply {\"ops\": []}.",
     );
-    if explicit {
+    if o.explicit {
         s.push_str("\n\nThe user EXPLICITLY asked the assistant to remember something. Always record it, rephrased as a short note, unless it holds a secret.");
     }
-    if reflection {
+    if o.reflection {
         s.push_str(
             "\n\nYou are also given an excerpt of a finished conversation. Record only what the user clearly asked for more than once or stated as a preference \
              about how they want things done; a single request for one task is not a preference. When in doubt reply {\"ops\": []}.",
+        );
+    }
+    if o.persona {
+        s.push_str(
+            "\n\nYou may also suggest a new persona for the assistant, with {\"op\":\"persona\",\"text\":\"...\",\"reason\":\"...\"}. Do this RARELY: only \
+             when the user has repeatedly shown how they want the assistant to sound or behave overall (tone, formality, humour, how it addresses them). \
+             text is the whole persona rewritten in a few lines under 600 characters, keeping what the current persona says that the user has not contradicted; \
+             reason is one short sentence about what the user did. The user will be asked to approve it. One-off requests are not a reason.",
         );
     }
     s
@@ -122,8 +143,13 @@ pub fn user_prompt(agent: &Agent, shown: &[&AgentMemory], project: Option<&str>,
             .join("\n")
     };
     let what = signals.iter().map(|f| format!("- {}", describe(f))).collect::<Vec<_>>().join("\n");
+    let persona = match (agent.suggest_persona, agent.persona.as_deref()) {
+        (true, Some(p)) => format!("\nCurrent persona: {p}"),
+        (true, None) => "\nCurrent persona: (none)".to_string(),
+        _ => String::new(),
+    };
     format!(
-        "Assistant: {} ({})\nCurrent project: {}\n\nCurrent notes:\n{notes}\n\nWhat just happened:\n{what}",
+        "Assistant: {} ({}){persona}\nCurrent project: {}\n\nCurrent notes:\n{notes}\n\nWhat just happened:\n{what}",
         agent.name,
         agent.specialty,
         project.unwrap_or("none"),
@@ -156,6 +182,7 @@ pub fn parse_ops(reply: &str) -> Vec<Op> {
                 (ids.len() >= 2).then_some(Op::Merge { ids, text, kind })
             }
             Some("delete") => o.get("id").and_then(id_from).map(|id| Op::Delete { id }),
+            Some("persona") if !text.trim().is_empty() => Some(Op::Persona { text, reason: o.get("reason").and_then(Value::as_str).unwrap_or("").trim().to_string() }),
             _ => None,
         };
         out.extend(op);
@@ -245,6 +272,8 @@ pub fn apply(db: &Db, agent_id: &str, project: Option<&str>, explicit: bool, sho
                     out.changed = true;
                 }
             }
+            // A persona is never a note, and never written from here.
+            Op::Persona { .. } => {}
         }
     }
     Ok(out)
@@ -391,6 +420,28 @@ mod tests {
     }
 
     #[test]
+    fn a_persona_suggestion_is_read_but_never_applied_as_a_note() {
+        let ops = parse_ops(r#"{"ops":[{"op":"persona","text":"Dry and terse.","reason":" asked for short answers three times "},{"op":"persona","text":"  "}]}"#);
+        assert_eq!(ops, vec![Op::Persona { text: "Dry and terse.".into(), reason: "asked for short answers three times".into() }]);
+        let (db, rick) = db_with_agent();
+        let out = apply(&db, &rick, None, false, &[], ops).unwrap();
+        assert!(!out.changed && out.added.is_empty() && db.count_memories(&rick).unwrap() == 0);
+        assert_eq!(db.get_agent(&rick).unwrap().persona, None, "the learner cannot write a persona");
+    }
+
+    #[test]
+    fn the_prompt_shows_the_current_persona_only_when_suggestions_are_allowed() {
+        let (db, rick) = db_with_agent();
+        let mut agent = db.get_agent(&rick).unwrap();
+        agent.persona = Some("Warm and playful.".into());
+        assert!(!user_prompt(&agent, &[], None, &[]).contains("Current persona"));
+        agent.suggest_persona = true;
+        assert!(user_prompt(&agent, &[], None, &[]).contains("Current persona: Warm and playful."));
+        agent.persona = None;
+        assert!(user_prompt(&agent, &[], None, &[]).contains("Current persona: (none)"));
+    }
+
+    #[test]
     fn the_prompt_numbers_the_notes_and_marks_the_locked_ones() {
         let (db, rick) = db_with_agent();
         note(&db, &rick, "Learned note", MemorySource::Auto, false);
@@ -410,7 +461,9 @@ mod tests {
         let p = user_prompt(&agent, &shown, Some("api"), &[sig]);
         assert!(p.contains("[1] (style) Typed note [locked]") && p.contains("[2] (style) Learned note\n"), "{p}");
         assert!(p.contains("Current project: api") && p.contains("No, use tabs") && p.contains("Here is the code with spaces"), "{p}");
-        assert!(system_prompt(true, false).contains("EXPLICITLY") && !system_prompt(false, false).contains("EXPLICITLY"));
-        assert!(system_prompt(false, true).contains("finished conversation") && !system_prompt(false, false).contains("finished conversation"));
+        let with = |explicit, reflection, persona| system_prompt(PromptOptions { explicit, reflection, persona });
+        assert!(with(true, false, false).contains("EXPLICITLY") && !with(false, false, false).contains("EXPLICITLY"));
+        assert!(with(false, true, false).contains("finished conversation") && !with(false, false, false).contains("finished conversation"));
+        assert!(with(false, false, true).contains("\"op\":\"persona\"") && !with(false, false, false).contains("persona"), "the persona op is only offered when allowed");
     }
 }

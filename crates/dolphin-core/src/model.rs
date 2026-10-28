@@ -302,9 +302,27 @@ pub struct Agent {
     /// Whether the agent learns from your corrections, reverts and ratings (and may save notes with its `remember` tool).
     /// Saying "remember that..." and the Memory list work either way.
     pub learning: bool,
+    /// Whether the agent's learner may suggest changes to its persona. Suggestions only ever become the persona when
+    /// the user accepts them. Needs `learning` on, since suggestions come out of the learner.
+    pub suggest_persona: bool,
     pub sort: i32,
     #[ts(type = "number")]
     pub updated_at: i64,
+}
+
+/// A change to its own persona an agent suggests, waiting for the user to accept or dismiss it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PersonaProposal {
+    pub id: Id,
+    pub agent_id: Id,
+    /// The whole persona as it would read after the change.
+    pub text: String,
+    /// Why, in a sentence, from what the user did.
+    pub reason: String,
+    #[ts(type = "number")]
+    pub created_at: i64,
 }
 
 /// A thumbs up or down on an agent's message.

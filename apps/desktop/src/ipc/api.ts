@@ -14,6 +14,7 @@ import type {
   ModelInfo,
   PermissionGrant,
   PermissionLevel,
+  PersonaProposal,
   Rating,
   ShellPolicy,
   RevertReport,
@@ -52,6 +53,11 @@ export interface Backend {
   forgetAgentMemories(agentId: string): Promise<number>;
   /** Thumbs up or down on an agent's message; `null` takes the rating back. Agents learn from it (when learning is on). */
   rateMessage(messageId: string, rating: Rating | null): Promise<void>;
+  /** A persona change the agent suggested for itself, waiting for you. */
+  personaProposal(agentId: string): Promise<PersonaProposal | null>;
+  /** Accepting is the only way a suggestion becomes the persona. */
+  acceptPersonaProposal(id: string): Promise<Agent>;
+  rejectPersonaProposal(id: string): Promise<void>;
   listChats(): Promise<Chat[]>;
   createChat(name: string, icon: string, agentIds: string[]): Promise<Chat>;
   updateChat(chat: Chat): Promise<Chat>;

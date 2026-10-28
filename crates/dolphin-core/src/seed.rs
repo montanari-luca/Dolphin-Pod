@@ -194,6 +194,7 @@ pub fn seed_if_needed(db: &Db) -> Result<bool> {
             ios_model: None,
             persona: None,
             learning: s.specialty != "council",
+            suggest_persona: false,
             sort: i as i32,
             updated_at: now,
         };
@@ -258,6 +259,7 @@ pub fn seed_new_agents_if_needed(db: &Db) -> Result<bool> {
                 persona: None,
                 // The council never takes notes about the user: it criticizes work, it does not learn habits.
                 learning: s.specialty != "council",
+                suggest_persona: false,
                 sort: i as i32,
                 updated_at: now_ms(),
             })?;

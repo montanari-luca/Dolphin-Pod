@@ -5,7 +5,7 @@ use crate::error::{CoreError, Result};
 use crate::model::{Agent, AgentColor, AgentRole};
 use crate::util::now_ms;
 
-const COLS: &str = "id, slug, name, role, specialty, job, color, model, image_model, ios_model, sort, updated_at, persona, learning";
+const COLS: &str = "id, slug, name, role, specialty, job, color, model, image_model, ios_model, sort, updated_at, persona, learning, suggest_persona";
 
 fn row_to_agent(r: &Row) -> rusqlite::Result<Agent> {
     Ok(Agent {
@@ -23,6 +23,7 @@ fn row_to_agent(r: &Row) -> rusqlite::Result<Agent> {
         updated_at: r.get(11)?,
         persona: r.get(12)?,
         learning: r.get::<_, i64>(13)? != 0,
+        suggest_persona: r.get::<_, i64>(14)? != 0,
     })
 }
 
@@ -58,12 +59,12 @@ impl Db {
         let mut a = a.clone();
         a.updated_at = now_ms();
         self.conn().execute(
-            "INSERT INTO agents (id, slug, name, role, specialty, job, color, model, image_model, ios_model, sort, updated_at, device_id, persona, learning)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+            "INSERT INTO agents (id, slug, name, role, specialty, job, color, model, image_model, ios_model, sort, updated_at, device_id, persona, learning, suggest_persona)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
              ON CONFLICT(id) DO UPDATE SET name = excluded.name, job = excluded.job, color = excluded.color,
                model = excluded.model, image_model = excluded.image_model, ios_model = excluded.ios_model,
                sort = excluded.sort, updated_at = excluded.updated_at, device_id = excluded.device_id,
-               persona = excluded.persona, learning = excluded.learning",
+               persona = excluded.persona, learning = excluded.learning, suggest_persona = excluded.suggest_persona",
             params![
                 a.id,
                 a.slug,
@@ -79,7 +80,8 @@ impl Db {
                 a.updated_at,
                 self.device_id(),
                 a.persona,
-                a.learning as i64
+                a.learning as i64,
+                a.suggest_persona as i64
             ],
         )?;
         Ok(a)

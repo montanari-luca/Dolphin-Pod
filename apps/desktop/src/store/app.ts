@@ -54,6 +54,8 @@ interface State {
   usage: Record<string, UsageStats>;
   /** Bumped whenever an agent's memory changes (here, by its learner or from another device), so lists reload. */
   memoryVersion: Record<string, number>;
+  /** Bumped whenever an agent's pending persona suggestion appears or is dealt with, so the card reloads. */
+  proposalVersion: Record<string, number>;
   activity: Record<string, Record<string, Activity>>;
   grants: Record<string, PermissionGrant[]>;
   providers: ProviderConfig[];
@@ -96,6 +98,7 @@ export const useApp = create<State>((set, get) => ({
   settings: {},
   usage: {},
   memoryVersion: {},
+  proposalVersion: {},
   activity: {},
   grants: {},
   providers: [],
@@ -238,6 +241,14 @@ export const useApp = create<State>((set, get) => ({
           set((s) => ({ settings: { ...s.settings, [key]: value } }));
         }
         break;
+      case "personaProposalChanged": {
+        set((s) => ({ proposalVersion: { ...s.proposalVersion, [e.agentId]: (s.proposalVersion[e.agentId] ?? 0) + 1 } }));
+        if (e.proposal) {
+          const who = get().agents.find((a) => a.id === e.agentId)?.name ?? "An agent";
+          get().toast("info", `${who} suggests a new persona for itself`, { label: "Review", run: () => get().setView("settings", "agents", e.agentId) });
+        }
+        break;
+      }
       case "memoryLearned": {
         // The list reloads from `memoriesChanged`; here the user is told, and can take it back.
         const { memory, previousText } = e;
