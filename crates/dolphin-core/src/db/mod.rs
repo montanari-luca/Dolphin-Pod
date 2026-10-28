@@ -25,6 +25,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migration_0003_sync.sql"),
     include_str!("migration_0004_remote.sql"),
     include_str!("migration_0005_shell_policy.sql"),
+    include_str!("migration_0006_persona.sql"),
 ];
 
 #[derive(Clone)]

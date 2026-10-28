@@ -112,6 +112,16 @@ pub mod keys {
     pub const AGENT_MODEL: &str = "agent.model";
     pub const AGENT_EFFORT: &str = "agent.effort";
     pub const AGENT_IMAGE_MODEL: &str = "agent.image_model";
+    pub const AGENT_PERSONA: &str = "agent.persona";
+}
+
+/// Longest persona the user may write; it is sent with every request the agent handles.
+pub const PERSONA_MAX_CHARS: usize = 1500;
+
+/// A persona as stored: trimmed, with blank meaning "none".
+pub fn clean_persona(s: &str) -> Option<String> {
+    let s = s.trim();
+    (!s.is_empty()).then(|| s.to_string())
 }
 
 pub fn registry() -> Vec<SettingDef> {
@@ -163,6 +173,8 @@ pub fn registry() -> Vec<SettingDef> {
         def(keys::AGENT_MODEL, "Agent model", "Provider and reasoning model the agent uses.", Agent, Model, Value::Null).nullable(),
         def(keys::AGENT_EFFORT, "Reasoning effort", "Reasoning effort for the agent's model, if the model supports it.", Agent, Effort, Value::Null).nullable(),
         def(keys::AGENT_IMAGE_MODEL, "Image model", "Image-generation model (image specialist only).", Agent, Model, Value::Null).nullable(),
+        def(keys::AGENT_PERSONA, "Persona", "The agent's voice and character (tone, quirks, how it addresses you). Added on top of its built-in specialty; leave empty for none.", Agent,
+            Text { max_len: PERSONA_MAX_CHARS }, Value::Null).nullable(),
     ]
 }
 
@@ -399,6 +411,7 @@ pub fn set(db: &Db, key: &str, target: Option<&str>, value: Value) -> Result<Set
                 keys::AGENT_COLOR => agent.color = serde_json::from_value(v)?,
                 keys::AGENT_MODEL => agent.model = serde_json::from_value(v)?,
                 keys::AGENT_IMAGE_MODEL => agent.image_model = serde_json::from_value(v)?,
+                keys::AGENT_PERSONA => agent.persona = v.as_str().and_then(clean_persona),
                 keys::AGENT_EFFORT => {
                     let m = agent.model.as_mut().ok_or_else(|| CoreError::invalid("set a model before the effort"))?;
                     m.effort = serde_json::from_value(v)?;
@@ -445,6 +458,18 @@ mod tests {
         assert!(set(&db, keys::AGENT_NAME, Some("Ricky"), json!("Two words")).is_err());
         let bad_color = json!({"type": "solid", "color": "red"});
         assert!(set(&db, keys::AGENT_COLOR, Some("Ricky"), bad_color).is_err());
+    }
+
+    #[test]
+    fn persona_is_an_agent_setting_that_can_be_cleared() {
+        let db = db();
+        set(&db, keys::AGENT_PERSONA, Some("@rick"), json!("  Calm, a little sarcastic.  ")).unwrap();
+        assert_eq!(db.agent_by_slug("rick").unwrap().persona.as_deref(), Some("Calm, a little sarcastic."));
+        assert!(set(&db, keys::AGENT_PERSONA, Some("@rick"), json!("x".repeat(PERSONA_MAX_CHARS + 1))).is_err());
+        assert!(db.agent_by_slug("rick").unwrap().persona.is_some(), "a rejected value changes nothing");
+        set(&db, keys::AGENT_PERSONA, Some("@rick"), Value::Null).unwrap();
+        assert_eq!(db.agent_by_slug("rick").unwrap().persona, None);
+        assert_eq!(db.agent_by_slug("roger").unwrap().persona, None, "other agents are untouched");
     }
 
     #[test]

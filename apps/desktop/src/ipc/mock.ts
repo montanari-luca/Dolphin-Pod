@@ -224,6 +224,7 @@ export function mockBackend(): Backend {
     model: null,
     imageModel: null,
     iosModel: null,
+    persona: null,
     sort: i,
     updatedAt: now(),
   }));
@@ -425,7 +426,7 @@ export function mockBackend(): Backend {
     listAgents: async () => structuredClone(agents),
     async updateAgent(a) {
       const i = agents.findIndex((x) => x.id === a.id);
-      agents[i] = { ...a, updatedAt: now() };
+      agents[i] = { ...a, persona: a.persona?.trim() || null, updatedAt: now() };
       emit({ type: "agentChanged", agent: structuredClone(agents[i]) });
       return structuredClone(agents[i]);
     },

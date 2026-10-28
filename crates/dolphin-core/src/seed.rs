@@ -183,6 +183,7 @@ pub fn seed_if_needed(db: &Db) -> Result<bool> {
             model: None,
             image_model: None,
             ios_model: None,
+            persona: None,
             sort: i as i32,
             updated_at: now,
         };
@@ -237,6 +238,7 @@ pub fn seed_new_agents_if_needed(db: &Db) -> Result<bool> {
             model: None,
             image_model: None,
             ios_model: None,
+            persona: None,
             sort: i as i32,
             updated_at: now_ms(),
         })?;

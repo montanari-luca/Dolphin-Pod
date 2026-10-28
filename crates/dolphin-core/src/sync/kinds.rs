@@ -34,7 +34,7 @@ pub const KINDS: &[KindDef] = &[
         kind: "agent",
         table: "agents",
         keys: &["id"],
-        fields: &["slug", "name", "role", "specialty", "job", "color", "model", "image_model", "ios_model", "sort", "deleted"],
+        fields: &["slug", "name", "role", "specialty", "job", "color", "model", "image_model", "ios_model", "persona", "sort", "deleted"],
         has_deleted: true,
     },
     KindDef {

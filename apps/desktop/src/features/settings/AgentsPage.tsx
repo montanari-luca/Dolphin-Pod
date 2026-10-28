@@ -4,12 +4,15 @@ import type { Agent, ModelRef } from "@dolphin/shared";
 import { AgentAvatar, AgentNameText, SPECIALTY_LABEL } from "@/components/agent";
 import { GradientEditor } from "@/components/GradientEditor";
 import { ModelPicker } from "@/components/ModelPicker";
-import { Button, Dialog, Field, Input } from "@/components/ui";
+import { Button, Dialog, Field, Input, Textarea } from "@/components/ui";
 import { errorText } from "@/ipc/api";
 import { cn } from "@/lib/cn";
 import { formatDuration, formatTokens } from "@/lib/format";
 import { useApp } from "@/store/app";
 import { PageHeader } from "./SettingsView";
+
+/** Matches the core limit (settings::PERSONA_MAX_CHARS). */
+const PERSONA_MAX_CHARS = 1500;
 
 export function AgentsPage() {
   const agents = useApp((s) => s.agents);
@@ -106,6 +109,19 @@ function AgentEditor({ agent }: { agent: Agent }) {
           <ModelPicker value={draft.imageModel} onChange={(imageModel) => setDraft({ ...draft, imageModel })} purpose="image" />
         </Field>
       )}
+
+      <Field
+        label="Persona"
+        hint="How this agent sounds and behaves: tone, quirks, how it addresses you. It is added on top of what the agent is built to do, so it can't remove its skills."
+      >
+        <Textarea
+          rows={4}
+          maxLength={PERSONA_MAX_CHARS}
+          placeholder="e.g. Dry and to the point. Skips the pleasantries and calls me chief."
+          value={draft.persona ?? ""}
+          onChange={(e) => setDraft({ ...draft, persona: e.target.value.trim() ? e.target.value : null })}
+        />
+      </Field>
 
       <Field label="Color">
         <GradientEditor value={draft.color} onChange={(color) => setDraft({ ...draft, color })} />

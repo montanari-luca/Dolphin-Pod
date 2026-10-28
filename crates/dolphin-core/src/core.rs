@@ -280,6 +280,10 @@ impl Core {
         merged.model = a.model;
         merged.image_model = a.image_model;
         merged.ios_model = a.ios_model;
+        merged.persona = a.persona.as_deref().and_then(settings::clean_persona);
+        if merged.persona.as_ref().is_some_and(|p| p.chars().count() > settings::PERSONA_MAX_CHARS) {
+            return Err(CoreError::invalid(format!("the persona is limited to {} characters", settings::PERSONA_MAX_CHARS)));
+        }
         merged.job = if a.job.trim().is_empty() { current.job } else { a.job };
         let saved = self.db.upsert_agent(&merged)?;
         self.emit(CoreEvent::AgentChanged { agent: saved.clone() });

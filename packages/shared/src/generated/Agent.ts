@@ -19,4 +19,9 @@ imageModel: ModelRef | null,
 /**
  * Per-platform override (Phase 2: used by the iOS app).
  */
-iosModel: ModelRef | null, sort: number, updatedAt: number, };
+iosModel: ModelRef | null, 
+/**
+ * The user's own description of this agent's voice and character. Layered on top of the built-in
+ * specialty text, which carries the working instructions; `None` adds nothing.
+ */
+persona: string | null, sort: number, updatedAt: number, };

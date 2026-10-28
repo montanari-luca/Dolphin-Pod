@@ -232,3 +232,42 @@ async fn a_plan_that_changed_after_it_was_shown_cannot_be_approved() {
     assert!(err.to_string().contains("changed after it was shown"), "{err}");
     assert_eq!(p.core.grants(&lh.id).unwrap()[0].level, PermissionLevel::ReadOnly, "nothing was escalated");
 }
+
+#[tokio::test]
+async fn a_persona_shapes_one_agent_and_leaves_the_others_prompts_alone() {
+    let p = pod(&["roger", "lincoln", "rick", "prof"]);
+    let coding = chat(&p.core, "Coding");
+    let mut rick = agent(&p.core, "rick");
+    rick.persona = Some("  Dry and terse. Calls the user 'chief'.  ".into());
+    p.core.update_agent(rick.clone()).unwrap();
+    assert_eq!(agent(&p.core, "rick").persona.as_deref(), Some("Dry and terse. Calls the user 'chief'."), "stored trimmed");
+
+    p.core.send_message(&coding.id, "@Rick write a hello world in Rust", vec![]).await.unwrap();
+    wait_for(&p.core, &coding.id, |m| m.iter().any(|m| m.agent_id.as_deref() == Some(&rick.id) && m.status == MessageStatus::Done)).await;
+    let prof = agent(&p.core, "prof");
+    p.core.send_message(&coding.id, "@Prof explain closures", vec![]).await.unwrap();
+    wait_for(&p.core, &coding.id, |m| m.iter().any(|m| m.agent_id.as_deref() == Some(&prof.id) && m.status == MessageStatus::Done)).await;
+
+    let reqs = p.scripted.requests.lock().unwrap();
+    let rick_req = reqs.iter().find(|r| r.system.starts_with("You are Rick")).unwrap();
+    let persona_at = rick_req.system.find("Dry and terse").expect("the persona is in Rick's system prompt");
+    assert!(rick_req.system.contains("a senior software engineer"), "the built-in specialty text stays: it carries the working instructions");
+    assert!(persona_at < rick_req.system.find("Today is").unwrap(), "stable text comes before the date so prompt caches stay warm");
+    let prof_req = reqs.iter().find(|r| r.system.starts_with("You are Prof")).unwrap();
+    assert!(!prof_req.system.contains("personality and voice") && !prof_req.system.contains("Dry and terse"), "no persona, nothing added, and no leaking between agents");
+}
+
+#[test]
+fn persona_edits_are_cleaned_and_limited() {
+    let p = pod(&[]);
+    let mut rick = agent(&p.core, "rick");
+    rick.persona = Some("Warm and playful.".into());
+    p.core.update_agent(rick.clone()).unwrap();
+    assert!(agent(&p.core, "rick").persona.is_some());
+    rick.persona = Some("   ".into());
+    p.core.update_agent(rick.clone()).unwrap();
+    assert_eq!(agent(&p.core, "rick").persona, None, "blank clears it");
+    rick.persona = Some("x".repeat(1501));
+    assert!(p.core.update_agent(rick).is_err());
+    assert_eq!(agent(&p.core, "rick").persona, None, "a rejected edit changes nothing");
+}

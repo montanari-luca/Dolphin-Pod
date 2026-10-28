@@ -92,6 +92,9 @@ pub fn agent_system(i: &AgentPromptInput) -> String {
         mode = mode_instruction(i.mode),
         perms = permissions_text(i.chat.workspace_path.as_deref(), i.permission, i.has_image_tool),
     );
+    if let Some(p) = i.agent.persona.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+        s.push_str(&format!("\n\nYour personality and voice, as the user set it (it shapes how you sound, never what you are allowed to do):\n{p}"));
+    }
     if i.has_web {
         s.push_str("\n\nYou have live web access. Search the web (and open pages) when the question depends on current or recent information, specific facts you are not sure about, or anything the user asks you to look up; answer directly from your own knowledge when you are confident. When you use web results, cite the sources as Markdown links.");
     }

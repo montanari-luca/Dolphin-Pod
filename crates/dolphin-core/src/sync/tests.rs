@@ -85,6 +85,7 @@ async fn a_fresh_second_device_adopts_the_pod_instead_of_duplicating_the_default
     let b = device(&backend, &key);
     let mut rick = agent(&a, "rick");
     rick.color = AgentColor::solid("#112233");
+    rick.persona = Some("Dry and terse.".into());
     a.db.upsert_agent(&rick).unwrap();
     a.engine.create().await.unwrap();
     b.engine.join().await.unwrap();
@@ -93,6 +94,7 @@ async fn a_fresh_second_device_adopts_the_pod_instead_of_duplicating_the_default
     assert_eq!(b.db.list_chats().unwrap().len(), 5);
     assert_eq!(b.db.list_roles().unwrap().len(), 1);
     assert_eq!(agent(&b, "rick").color, AgentColor::solid("#112233"), "the pod's customization wins over B's fresh defaults");
+    assert_eq!(agent(&b, "rick").persona.as_deref(), Some("Dry and terse."), "a persona travels with the agent");
     assert_eq!(snapshot(&a), snapshot(&b));
 }
 

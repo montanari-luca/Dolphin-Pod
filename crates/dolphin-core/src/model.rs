@@ -296,6 +296,9 @@ pub struct Agent {
     pub image_model: Option<ModelRef>,
     /// Per-platform override (Phase 2: used by the iOS app).
     pub ios_model: Option<ModelRef>,
+    /// The user's own description of this agent's voice and character. Layered on top of the built-in
+    /// specialty text, which carries the working instructions; `None` adds nothing.
+    pub persona: Option<String>,
     pub sort: i32,
     #[ts(type = "number")]
     pub updated_at: i64,

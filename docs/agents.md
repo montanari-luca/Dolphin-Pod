@@ -21,6 +21,11 @@ Every agent can be renamed (one word, so mentions work), recolored with a solid 
 own provider, model and reasoning effort. Hover any agent name for its job, all-time token use, thinking time and
 working time.
 
+Each agent can also have a **persona**: a few lines (up to 1,500 characters) describing its voice and character, such
+as "dry and to the point, calls me chief". Set it in Settings → Agents, or ask Roger to change it. The persona is added
+on top of what the agent is built to do, so it changes how the agent sounds, never what it is allowed to do, and it
+stays with that agent only. It syncs between your devices with the rest of the agent.
+
 ## Working together
 
 Coding and long-horizon agents (Rick, Micheal, Jordan, Viktor, Ducky) can hand a task to Robert, Amelia or Luna mid-task

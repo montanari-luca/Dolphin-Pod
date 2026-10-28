@@ -41,6 +41,7 @@ mod tests {
             model: None,
             image_model: None,
             ios_model: None,
+            persona: None,
             sort: 0,
             updated_at: 0,
         }
