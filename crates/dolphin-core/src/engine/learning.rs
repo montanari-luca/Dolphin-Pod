@@ -22,6 +22,16 @@ const LEARNER_TIMEOUT: Duration = Duration::from_secs(90);
 const KEEP_SIGNALS_DAYS: i64 = 14;
 const EXCERPT_CHARS: usize = 700;
 
+/// A chat is looked back over once its newest message is this old.
+const IDLE_AFTER_MS: i64 = 10 * 60_000;
+/// Fewer new messages than this are not worth a model call.
+const REFLECT_MIN_MESSAGES: usize = 4;
+const REFLECT_MAX_MESSAGES: usize = 24;
+const REFLECT_MAX_AGENTS: usize = 3;
+const REFLECT_MESSAGE_CHARS: usize = 400;
+/// Device-local settings (`device.` never syncs): when reflecting was first seen on, and how far each chat got.
+const REFLECT_SINCE: &str = "device.reflect_since";
+
 impl Core {
     /// Log a signal for the learner. Automatic learning must be on for the agent, except for "remember", which is
     /// the user's own instruction. Whether it was logged.
@@ -140,6 +150,78 @@ impl Core {
         Ok(())
     }
 
+    /// Look back over chats that have gone quiet, for preferences the user showed without ever correcting anything.
+    /// Off unless the user turned on "Learn from finished conversations". Only conversations after it was turned on
+    /// count. Queues one `Reflection` signal per agent that took part and starts the learner; how many were queued.
+    pub fn reflect_idle(self: &Arc<Self>, now: i64) -> usize {
+        let since = self.db.setting_raw(REFLECT_SINCE).ok().flatten().and_then(|v| v.as_i64());
+        if !settings::get_bool(&self.db, keys::LEARNING_REFLECT) {
+            // Turning it off forgets when it was on, so turning it on again does not reach back over the time in between.
+            if since.is_some() {
+                let _ = self.db.set_setting_raw(REFLECT_SINCE, &Value::Null);
+            }
+            return 0;
+        }
+        let Some(since) = since else {
+            let _ = self.db.set_setting_raw(REFLECT_SINCE, &json!(now));
+            return 0;
+        };
+        let Ok(chats) = self.db.list_chats() else { return 0 };
+        let queued: usize = chats.iter().map(|c| self.reflect_on_chat(c, since, now)).sum();
+        if queued > 0 {
+            self.schedule_learning();
+        }
+        queued
+    }
+
+    fn reflect_on_chat(&self, chat: &Chat, since: i64, now: i64) -> usize {
+        let marker = format!("device.reflected.{}", chat.id);
+        let upto = self.db.setting_raw(&marker).ok().flatten().and_then(|v| v.as_i64()).unwrap_or(0).max(since);
+        let Ok(msgs) = self.db.list_messages(&chat.id, 200) else { return 0 };
+        if msgs.iter().any(|m| matches!(m.status, MessageStatus::Streaming | MessageStatus::Pending)) {
+            return 0;
+        }
+        let fresh: Vec<&Message> = msgs.iter().filter(|m| m.created_at > upto).collect();
+        let Some(last) = fresh.last() else { return 0 };
+        if now - last.updated_at.max(last.created_at) < IDLE_AFTER_MS || fresh.len() < REFLECT_MIN_MESSAGES {
+            return 0;
+        }
+        // What was said: the user's and the agents' own words, not routing acks, notices or images.
+        let said: Vec<&&Message> = fresh
+            .iter()
+            .filter(|m| matches!(m.kind, MessageKind::Text | MessageKind::Plan) && m.status == MessageStatus::Done && !m.content.trim().is_empty())
+            .collect();
+        let _ = self.db.set_setting_raw(&marker, &json!(last.created_at));
+        let lincoln = self.agent_by_slug("lincoln").map(|a| a.id).unwrap_or_default();
+        let said: Vec<&&Message> = said.into_iter().rev().take(REFLECT_MAX_MESSAGES).rev().collect();
+        if !said.iter().any(|m| m.agent_id.is_none()) || !said.iter().any(|m| m.agent_id.is_some()) {
+            return 0;
+        }
+        let names: std::collections::HashMap<String, String> = self.db.list_agents().unwrap_or_default().into_iter().map(|a| (a.id, a.name)).collect();
+        let transcript = said
+            .iter()
+            .map(|m| {
+                let who = m.agent_id.as_ref().and_then(|id| names.get(id)).map(String::as_str).unwrap_or("User");
+                format!("{who}: {}", truncate(m.content.trim().replace('\n', " ").as_str(), REFLECT_MESSAGE_CHARS))
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        // The agents that said the most look back; the rest of a crowded chat stay out of it.
+        let mut counts: Vec<(String, usize)> = Vec::new();
+        for id in said.iter().filter_map(|m| m.agent_id.as_ref()).filter(|id| **id != lincoln) {
+            match counts.iter_mut().find(|(a, _)| a == id) {
+                Some((_, n)) => *n += 1,
+                None => counts.push((id.clone(), 1)),
+            }
+        }
+        counts.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        counts
+            .into_iter()
+            .take(REFLECT_MAX_AGENTS)
+            .filter(|(id, _)| self.record_feedback(id, chat, None, Signal::Reflection, json!({ "transcript": transcript })))
+            .count()
+    }
+
     /// Start the learner in the background unless one is already running (it then goes round once more).
     pub(crate) fn schedule_learning(self: &Arc<Self>) {
         if self.learning_busy.swap(true, Ordering::SeqCst) {
@@ -190,7 +272,8 @@ impl Core {
 
         let mut ops = Vec::new();
         if let Some((provider, mut req)) = self.utility_handle(&roger) {
-            req.system = learner::system_prompt(explicit);
+            let reflection = signals.iter().any(|f| f.signal == Signal::Reflection);
+            req.system = learner::system_prompt(explicit, reflection);
             req.messages = vec![ChatMessage::user(learner::user_prompt(agent, &shown, project.as_deref(), signals))];
             req.json_mode = true;
             req.tools.clear();

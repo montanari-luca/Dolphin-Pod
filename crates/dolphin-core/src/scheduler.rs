@@ -54,6 +54,8 @@ pub fn spawn(core: CoreRef) {
                 tracing::warn!("cleanup failed: {e}");
             }
             run_automations(&core).await;
+            // Chats that went quiet are looked back over for lasting preferences (only if the user turned that on).
+            core.reflect_idle(now_ms());
             if now_ms() - last_maintenance > 6 * HOUR_MS {
                 last_maintenance = now_ms();
                 maintenance(&core);

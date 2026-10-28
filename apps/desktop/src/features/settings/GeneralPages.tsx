@@ -94,6 +94,9 @@ export function GeneralPage() {
         <Row title="DP Council reviews big tasks" description="Before a coding, agentic, documentation or research agent starts a big task (or after its draft, for plans), DP Council criticizes the approach once on the strongest model. Pick its model in Agents. Turn this off to save time and tokens.">
           <BoolSetting k="council.enabled" />
         </Row>
+        <Row title="Learn from finished conversations" description="When a chat has been quiet for ten minutes, the agents that took part look back over it for lasting preferences you showed without ever correcting them. This sends a short transcript of the conversation to your utility model, so it is off by default. Only conversations after you turn it on are looked at.">
+          <BoolSetting k="learning.reflect" />
+        </Row>
         <Row title="Show orchestration details" description="Show Lincoln's brief and the routing decision on messages.">
           <BoolSetting k="routing.show_briefs" />
         </Row>

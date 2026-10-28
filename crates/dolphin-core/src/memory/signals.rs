@@ -20,6 +20,8 @@ pub enum Signal {
     Correction,
     /// The user asked the agent to remember something.
     Remember,
+    /// A finished conversation, looked back over for preferences the user showed without correcting anything.
+    Reflection,
 }
 
 #[derive(Debug, Clone, PartialEq)]

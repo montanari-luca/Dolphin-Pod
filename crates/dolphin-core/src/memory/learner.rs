@@ -31,7 +31,7 @@ pub enum Op {
     Delete { id: usize },
 }
 
-pub fn system_prompt(explicit: bool) -> String {
+pub fn system_prompt(explicit: bool, reflection: bool) -> String {
     let mut s = String::from(
         "You keep the private notes an AI assistant takes about its user so it works better for them next time. \
          You are given the assistant's current notes (numbered) and something that just happened. Decide whether the user \
@@ -55,6 +55,12 @@ pub fn system_prompt(explicit: bool) -> String {
     );
     if explicit {
         s.push_str("\n\nThe user EXPLICITLY asked the assistant to remember something. Always record it, rephrased as a short note, unless it holds a secret.");
+    }
+    if reflection {
+        s.push_str(
+            "\n\nYou are also given an excerpt of a finished conversation. Record only what the user clearly asked for more than once or stated as a preference \
+             about how they want things done; a single request for one task is not a preference. When in doubt reply {\"ops\": []}.",
+        );
     }
     s
 }
@@ -80,6 +86,8 @@ fn describe(f: &Feedback) -> String {
         Signal::ThumbDown => format!("The user gave the assistant's answer a thumbs down.{}{}", quote("request", "The user's request"), quote("reply", "The assistant's answer")),
         Signal::ThumbUp => format!("The user gave the assistant's answer a thumbs up.{}{}", quote("request", "The user's request"), quote("reply", "The assistant's answer")),
         Signal::Remember => format!("The user asked the assistant to remember: \"{}\"", truncate(str_of(d, "text").trim(), EXCERPT_CHARS)),
+        // The excerpt is already bounded when it is recorded; quoting it again here would cut the end off.
+        Signal::Reflection => format!("A conversation just ended. Its excerpt:\n{}", str_of(d, "transcript")),
     }
 }
 
@@ -402,6 +410,7 @@ mod tests {
         let p = user_prompt(&agent, &shown, Some("api"), &[sig]);
         assert!(p.contains("[1] (style) Typed note [locked]") && p.contains("[2] (style) Learned note\n"), "{p}");
         assert!(p.contains("Current project: api") && p.contains("No, use tabs") && p.contains("Here is the code with spaces"), "{p}");
-        assert!(system_prompt(true).contains("EXPLICITLY") && !system_prompt(false).contains("EXPLICITLY"));
+        assert!(system_prompt(true, false).contains("EXPLICITLY") && !system_prompt(false, false).contains("EXPLICITLY"));
+        assert!(system_prompt(false, true).contains("finished conversation") && !system_prompt(false, false).contains("finished conversation"));
     }
 }

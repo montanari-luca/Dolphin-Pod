@@ -73,6 +73,18 @@ tokens, card numbers) are never saved, and a note that repeats an existing one i
 Notes an agent writes itself are marked **learned**. When an agent learns something, a toast tells you what, with an
 **Undo** button: a new note is forgotten, and a reworded note gets its old text back.
 
+### Learning from finished conversations
+
+Corrections catch what you say out loud. Some preferences you only show: asking for the same format three times
+without ever saying "always". With **Learn from finished conversations** (Settings → General) on, a chat that has been
+quiet for ten minutes is looked back over by the agents that took part (the three most active at most). They are shown
+the last 24 messages and asked for lasting preferences only; a request for one task is not a preference.
+
+This is **off by default**, because it sends a transcript of the conversation (up to 24 messages, each cut to 400
+characters) to your utility model, where the signals above send only a few excerpts. Only conversations after you turn it
+on are looked at, and each message is looked at once. What an agent learns this way is treated like everything else it
+learns: marked **learned**, shown in a toast with **Undo**, and never able to change a note you wrote.
+
 ### You stay in charge
 
 - A learner can reword or remove only the notes **it wrote itself**. Never the ones you added, edited or pinned.

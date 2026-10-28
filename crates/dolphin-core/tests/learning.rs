@@ -405,3 +405,87 @@ async fn reverting_a_run_is_a_signal() {
     assert_eq!(p.memories("rick")[0].project, None);
     assert!(seen.contains(&format!("Current project: {}", ws.path().file_name().unwrap().to_string_lossy())), "{seen}");
 }
+
+// ---------------------------------------------------------------- reflecting on quiet chats
+
+const MINUTE: i64 = 60_000;
+
+fn now() -> i64 {
+    dolphin_core::util::now_ms()
+}
+
+/// Two more exchanges with Rick, who has already answered `before` times: four more messages in the chat.
+async fn talk_with_rick(p: &Pod, before: usize) {
+    p.say_to_rick("write the function with tabs", before + 1).await;
+    p.say_to_rick("and keep the answers short", before + 2).await;
+}
+
+#[tokio::test]
+async fn looking_back_is_off_until_the_user_turns_it_on() {
+    let p = pod();
+    p.learner_says(r#"{"ops":[{"op":"add","kind":"style","text":"Prefers short answers"}]}"#);
+    talk_with_rick(&p, 0).await;
+    assert_eq!(p.core.reflect_idle(now() + 60 * MINUTE), 0);
+    settle().await;
+    assert!(p.learner_calls().is_empty(), "nothing is sent to the utility model");
+}
+
+#[tokio::test]
+async fn a_quiet_chat_is_looked_back_over_once_by_each_agent_that_took_part() {
+    let p = pod();
+    p.core.set_setting("learning.reflect", None, json!(true)).unwrap();
+    p.learner_says(r#"{"ops":[{"op":"add","kind":"style","text":"Prefers short answers"}]}"#);
+    assert_eq!(p.core.reflect_idle(now()), 0, "turning it on only starts the clock");
+    tokio::time::sleep(Duration::from_millis(5)).await;
+
+    talk_with_rick(&p, 0).await;
+    assert_eq!(p.core.reflect_idle(now() + MINUTE), 0, "the chat is not quiet yet");
+    assert_eq!(p.core.reflect_idle(now() + 11 * MINUTE), 1, "Rick is the only agent that spoke");
+    until(|| !p.memories("rick").is_empty()).await;
+
+    let m = &p.memories("rick")[0];
+    assert_eq!((m.text.as_str(), m.source), ("Prefers short answers", MemorySource::Auto));
+    let call = &p.learner_calls()[0];
+    let seen = call.messages[0].text_content();
+    assert!(call.system.contains("finished conversation") && !call.system.contains("EXPLICITLY"));
+    assert!(seen.contains("User: @Rick write the function with tabs") && seen.contains("Rick: ok") && seen.contains("User: @Rick and keep the answers short"), "{seen}");
+    assert!(p.memories("roger").is_empty(), "agents that said nothing learn nothing");
+
+    // The same messages are not looked at twice; new ones are.
+    assert_eq!(p.core.reflect_idle(now() + 30 * MINUTE), 0);
+    talk_with_rick(&p, 2).await;
+    assert_eq!(p.core.reflect_idle(now() + 60 * MINUTE), 1);
+}
+
+#[tokio::test]
+async fn only_conversations_after_it_was_turned_on_count_and_short_ones_are_skipped() {
+    let p = pod();
+    talk_with_rick(&p, 0).await;
+    p.core.set_setting("learning.reflect", None, json!(true)).unwrap();
+    assert_eq!(p.core.reflect_idle(now()), 0);
+    assert_eq!(p.core.reflect_idle(now() + 60 * MINUTE), 0, "what was said before it was turned on stays private");
+
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    p.say_to_rick("one more thing", 3).await;
+    assert_eq!(p.core.reflect_idle(now() + 60 * MINUTE), 0, "two messages are not worth a model call");
+    settle().await;
+    assert!(p.learner_calls().is_empty());
+
+    // Turning it off forgets the start, so turning it on later does not reach back over the time in between.
+    p.core.set_setting("learning.reflect", None, json!(false)).unwrap();
+    p.core.reflect_idle(now());
+    assert_eq!(p.core.db.setting_raw("device.reflect_since").unwrap(), Some(serde_json::Value::Null));
+}
+
+#[tokio::test]
+async fn an_agent_that_is_not_learning_is_not_looked_back_over() {
+    let p = pod();
+    p.core.set_setting("learning.reflect", None, json!(true)).unwrap();
+    p.core.reflect_idle(now());
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    p.core.set_setting("agent.learning", Some("Rick"), json!(false)).unwrap();
+    talk_with_rick(&p, 0).await;
+    assert_eq!(p.core.reflect_idle(now() + 60 * MINUTE), 0);
+    settle().await;
+    assert!(p.learner_calls().is_empty());
+}
