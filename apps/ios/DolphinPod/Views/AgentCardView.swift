@@ -68,6 +68,13 @@ struct AgentCardView: View {
         case "researcher": return "Research"
         case "git": return "Git"
         case "council": return "Council"
+        case "director": return "Director"
+        case "engineer": return "Engineering"
+        case "designer": return "Design"
+        case "level_designer": return "Level design"
+        case "artist_3d": return "3D art"
+        case "audio_designer": return "Audio"
+        case "story_designer": return "Story"
         default: return agent.specialty.capitalized
         }
     }

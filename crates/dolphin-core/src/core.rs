@@ -74,6 +74,7 @@ impl Core {
         seed::seed_if_needed(&db)?;
         seed::seed_roles_if_needed(&db)?;
         seed::seed_new_agents_if_needed(&db)?;
+        seed::seed_new_chats_if_needed(&db)?;
         seed::canonicalize_seed_ids(&db)?;
         db.recover_interrupted_messages()?;
         let (events, _) = broadcast::channel(4096);

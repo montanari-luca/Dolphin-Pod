@@ -88,6 +88,13 @@ enum Icons {
         case "researcher": return "binoculars.fill"
         case "git": return "arrow.triangle.branch"
         case "council": return "scalemass.fill"
+        case "director": return "safari.fill"
+        case "engineer": return "ruler.fill"
+        case "designer": return "pencil.and.ruler.fill"
+        case "level_designer": return "map.fill"
+        case "artist_3d": return "cube.fill"
+        case "audio_designer": return "waveform"
+        case "story_designer": return "theatermasks.fill"
         default: return "sparkles"
         }
     }

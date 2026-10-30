@@ -1,6 +1,6 @@
 import * as HoverCard from "@radix-ui/react-hover-card";
 import { motion } from "motion/react";
-import { BadgeCheck, BookOpen, Bug, Code2, Feather, GitBranch, GraduationCap, Image as ImageIcon, Lightbulb, MessagesSquare, Network, Rocket, Scale, Settings2, ShieldCheck, Sparkles, Telescope, type LucideIcon } from "lucide-react";
+import { AudioLines, BadgeCheck, BookOpen, Bug, Box, Clapperboard, Code2, Compass, DraftingCompass, Feather, GitBranch, GraduationCap, Image as ImageIcon, Lightbulb, Map as MapIcon, MessagesSquare, Network, PenTool, Rocket, Scale, Settings2, ShieldCheck, Sparkles, Telescope, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { Agent } from "@dolphin/shared";
 import { cn } from "@/lib/cn";
@@ -25,6 +25,13 @@ export const SPECIALTY_ICON: Record<string, LucideIcon> = {
   researcher: Telescope,
   git: GitBranch,
   council: Scale,
+  director: Compass,
+  engineer: DraftingCompass,
+  designer: PenTool,
+  level_designer: MapIcon,
+  artist_3d: Box,
+  audio_designer: AudioLines,
+  story_designer: Clapperboard,
 };
 
 export const SPECIALTY_LABEL: Record<string, string> = {
@@ -43,7 +50,17 @@ export const SPECIALTY_LABEL: Record<string, string> = {
   researcher: "Research",
   git: "Git",
   council: "Council",
+  director: "Director",
+  engineer: "Engineering",
+  designer: "Design",
+  level_designer: "Level design",
+  artist_3d: "3D art",
+  audio_designer: "Audio",
+  story_designer: "Story",
 };
+
+/** Specialists that belong to the development chats; a new custom chat does not preselect them (the director would take over its routing). */
+export const DEV_TEAM_SPECIALTIES = new Set(["director", "engineer", "designer", "level_designer", "artist_3d", "audio_designer", "story_designer"]);
 
 export function AgentAvatar({ agent, size = 32, busy, className }: { agent: Agent; size?: number; busy?: boolean; className?: string }) {
   const Icon = SPECIALTY_ICON[agent.specialty] ?? Sparkles;

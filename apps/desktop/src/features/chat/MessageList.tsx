@@ -16,6 +16,9 @@ const SUGGESTIONS: Record<string, string[]> = {
   "Long Horizon Agentic": ["Make a plan to add user accounts to my app", "Plan a migration from REST to GraphQL", "@Luna research the best approaches to offline-first sync"],
   Learning: ["Teach me how recursion works", "Help me understand Big-O notation"],
   Creative: ["Write a short poem about the sea", "@Sarah draw a dolphin made of glass"],
+  "Software Development": ["Build a command-line todo app with tests", "Design and build a rate limiter for my API", "@Nolan how should I structure a plugin system?"],
+  "Web Development": ["Build a landing page for a coffee shop", "Create a dashboard with a sidebar and charts", "@Kai give me a minimal design for a settings page"],
+  "Game Development": ["Make a small 2D platformer prototype", "@Tilda design the first three levels", "@Wren write the opening story for a space-trader game"],
 };
 
 function isGrouped(prev: Message | undefined, m: Message) {

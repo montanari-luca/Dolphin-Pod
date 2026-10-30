@@ -1,7 +1,7 @@
 import { Brush, Check, FolderOpen, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Agent, Chat, ShellPolicy } from "@dolphin/shared";
-import { AgentAvatar } from "@/components/agent";
+import { AgentAvatar, DEV_TEAM_SPECIALTIES } from "@/components/agent";
 import { Button, ConfirmDialog, Dialog, Field, Input, Row, Switch } from "@/components/ui";
 import { CHAT_ICONS } from "@/lib/chatIcons";
 import { cn } from "@/lib/cn";
@@ -74,8 +74,8 @@ export function NewChatDialog({ open, onOpenChange }: { open: boolean; onOpenCha
   const [selected, setSelected] = useState<string[]>([]);
   useEffect(() => {
     if (open) {
-      // Every agent is selected by default; the user confirms or trims the list.
-      setSelected(agents.filter((a) => a.role === "specialist").map((a) => a.id));
+      // Every agent is selected by default, except the development team; the user confirms or trims the list.
+      setSelected(agents.filter((a) => a.role === "specialist" && !DEV_TEAM_SPECIALTIES.has(a.specialty)).map((a) => a.id));
       setName("");
       setIcon("hash");
     }
@@ -93,7 +93,7 @@ export function NewChatDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       open={open}
       onOpenChange={onOpenChange}
       title="New chat"
-      description="Choose who takes part. Every agent is selected to start with."
+      description="Choose who takes part. Every agent is selected to start with, except the development team (add the director to make the chat a development chat)."
       footer={
         <>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>

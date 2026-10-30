@@ -92,8 +92,8 @@ async fn a_fresh_second_device_adopts_the_pod_instead_of_duplicating_the_default
     a.engine.create().await.unwrap();
     b.engine.join().await.unwrap();
     settle(&[&a, &b]).await;
-    assert_eq!(b.db.list_agents().unwrap().len(), 15, "stable ids: no second Roger");
-    assert_eq!(b.db.list_chats().unwrap().len(), 5);
+    assert_eq!(b.db.list_agents().unwrap().len(), 24, "stable ids: no second Roger");
+    assert_eq!(b.db.list_chats().unwrap().len(), 8);
     assert_eq!(b.db.list_roles().unwrap().len(), 1);
     assert_eq!(agent(&b, "rick").color, AgentColor::solid("#112233"), "the pod's customization wins over B's fresh defaults");
     assert_eq!(agent(&b, "rick").persona.as_deref(), Some("Dry and terse."), "a persona travels with the agent");
