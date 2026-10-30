@@ -38,6 +38,7 @@ struct MessageRow: View {
                 ToolList(meta: message.meta)
                 if message.status == .error { ErrorBox(message: message) }
                 if message.kind == .plan && message.status == .done { PlanBar(message: message) }
+                if message.meta["designChoice"]["state"].string != nil { DesignChoiceCard(message: message) }
                 if message.status == .cancelled { Text("Stopped").font(.caption).foregroundStyle(.secondary) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -51,6 +52,7 @@ struct MessageRow: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             if message.isUser { UserNameText() } else if let agent { AgentNameText(agent: agent) } else { Text("Unknown").font(.system(size: 15, weight: .semibold)) }
             if !message.isUser, let mode = message.routingMode, mode != "answer" { Tag(text: mode.capitalized, tint: mode == "plan" ? .orange : Brand.blue) }
+            if let label = message.meta["designOption"]["label"].string { Tag(text: label == "merged" ? "Merged design" : "Idea \(label)", tint: Brand.blue) }
             if message.isUser && message.isRemote {
                 Tag(text: message.remoteDevice.map { "via \($0)" } ?? message.remoteTarget.map { "sent to \($0)" } ?? "remote", tint: Brand.blue, symbol: "antenna.radiowaves.left.and.right")
             }
@@ -180,6 +182,71 @@ struct PlanBar: View {
         }
         .padding(10)
         .glass(radius: 12)
+    }
+}
+
+/// The two design ideas side by side (swipe sideways on a phone), with the buttons to pick one or have them merged.
+struct DesignChoiceCard: View {
+    @Environment(AppModel.self) private var model
+    let message: Message
+    @State private var merging = false
+    @State private var note = ""
+
+    private var choice: JSON { message.meta["designChoice"] }
+    private var decided: Bool { choice["state"].string == "decided" }
+    private var options: [JSON] { choice["options"].array ?? [] }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 10) {
+                    ForEach(Array(options.enumerated()), id: \.offset) { _, option in idea(option) }
+                }
+            }
+            if !decided {
+                HStack(spacing: 8) {
+                    ForEach(Array(options.enumerated()), id: \.offset) { _, option in
+                        let label = option["label"].string ?? "A"
+                        Button("Pick \(label)") { model.chooseDesign(message.id, choice: label.lowercased()) }
+                            .buttonStyle(.borderedProminent).tint(Brand.blue).controlSize(.small)
+                    }
+                    Button("Merge…") { merging.toggle() }.buttonStyle(.bordered).controlSize(.small)
+                }
+                if merging {
+                    HStack(spacing: 8) {
+                        TextField("How to merge them", text: $note).textFieldStyle(.roundedBorder).font(.system(size: 13))
+                        Button("Merge") {
+                            model.chooseDesign(message.id, choice: "merge", note: note.trimmingCharacters(in: .whitespaces).isEmpty ? nil : note)
+                            merging = false
+                        }
+                        .buttonStyle(.borderedProminent).tint(Brand.blue).controlSize(.small)
+                    }
+                }
+            } else {
+                let picked = choice["picked"].string ?? ""
+                Label(picked == "merge" ? "Merging the two designs" : "You picked idea \(picked.uppercased())", systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 12.5)).foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+        .glass(radius: 12)
+    }
+
+    private func idea(_ option: JSON) -> some View {
+        let label = option["label"].string ?? "A"
+        let author = model.agent(option["agentId"].string)
+        let text = model.messages[message.chatId]?.first { $0.id == option["messageId"].string }?.content ?? ""
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                if let author { AgentAvatar(agent: author, size: 20, busy: false) }
+                Text(author?.name ?? "Designer").font(.system(size: 13, weight: .semibold))
+                Tag(text: "Idea \(label)", tint: decided && choice["picked"].string == label.lowercased() ? .green : Brand.blue)
+            }
+            MarkdownView(text: text)
+        }
+        .padding(10)
+        .frame(width: 270, alignment: .topLeading)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 

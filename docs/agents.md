@@ -16,6 +16,13 @@
 | Amelia | Verification. Double-checks other agents' work with evidence, only when you explicitly ask ("do this, then double-check it") |
 | Luna | Research. Many parallel web searches, source validation, fact and timestamp checks, then a cited report |
 | DP Council | Council. Criticizes big tasks once, on the strongest model, before the specialist works (see [DP Council](#dp-council)) |
+| Vera | Software director. Routes the development chats in place of Roger and Lincoln (see [Development chats](#development-chats)) |
+| Nolan, Priya | Software engineers. Engineer the software (components, interfaces, risks, test plan, build order) before the coder writes code |
+| Mira, Kai | Designers. Each works out one design idea, side by side; you pick one or merge them |
+| Tilda | Level designer (games) |
+| Jules | 3D artist (games) |
+| Sonia | Audio designer (games) |
+| Wren | Story designer (games) |
 | Robert | Git manager. Status, history, commit, fetch, push and pull. The coding agents hand git work to him; push, pull and anything destructive wait for your confirmation |
 
 Every agent can be renamed (one word, so mentions work), recolored with a solid color or gradient, and given its
@@ -51,6 +58,27 @@ and then steps out. It never writes files or runs commands.
 - **Switch:** *DP Council reviews big tasks* in Settings turns it off to save time and tokens. Each review is one
   extra call on its model (plans use two extra calls: the draft and the review).
 - **Ask it yourself:** `@DP Council` reviews whatever is in the chat.
+
+## Development chats
+
+Software Development, Web Development and Game Development are chats with Vera, the software director, in them. In a chat
+with the director she decides who works on your message in place of Roger and Lincoln (settings, small talk and
+general questions still go to Roger). @mentions still go straight to the agent.
+
+- **The team, in order:** designers, then the game specialists (Game Development), then the engineers, then the coder
+  (Rick), then the check if you asked for one. Both engineers or neither work on a job, and both designers or neither.
+- **Engineers before the coder:** whenever Rick is asked to build something, Nolan and Priya engineer it first, and
+  Rick builds from their plan. Quick requests, plans and questions skip them.
+- **Review before building:** Vera reviews the engineers' plan once, read-only, before Rick starts. That review
+  counts as the turn's review, so DP Council stays out of it. Vera reviews on the model set for Vera, or on the strongest model
+  in the pod if none is set.
+- **Two design ideas:** Mira and Kai work at the same time and do not see each other's idea. The run then waits on a
+  card with both ideas side by side. **Pick A** or **Pick B** hands that idea to the rest of the team; **Merge…**
+  takes a note (for example "A's layout with B's colors"), has Mira write one merged design from both, and continues
+  with it. Your choice appears in the chat as a message from you.
+- **Your own chats:** the new-chat dialog does not preselect the development team. Add Vera to a chat to make it a
+  development chat, and the rest of the team along with her.
+- **Existing pods** get the three chats and the nine agents once on update. A chat or agent you delete stays deleted.
 
 ## Asking you questions
 

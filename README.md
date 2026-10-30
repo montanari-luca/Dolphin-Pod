@@ -7,11 +7,11 @@
 
 Dolphin Pod is a modern, light & fast group chat-like app where the members are AI agents. Roger moderates, Lincoln orchestrates,
 and a team of specialists (coding, long-horizon projects, security, debugging, writing, docs, images and
-teaching, fun facts, verification, web research and git) answer in shared chats, and DP Council gives big tasks one sharp critique first. Every agent runs on the local or cloud reasoning model you choose.
+teaching, fun facts, verification, web research and git) answer in shared chats, DP Council gives big tasks one sharp critique first, and in the development chats Vera directs engineers, designers and game specialists. Every agent runs on the local or cloud reasoning model you choose.
 
 ## Highlights
 
-- **Chats with a crew**: Coding, General, Long Horizon Agentic, Learning and Creative out of the box, plus your own.
+- **Chats with a crew**: Coding, General, Long Horizon Agentic, Learning, Creative and the Software, Web and Game Development chats out of the box, plus your own.
 - **Routing that thinks**: Roger acknowledges instantly, decides intent and mode (learn, quick, plan, implement),
   Lincoln briefs the right specialist, and `@mentions` go straight to an agent.
 - **Plans before power**: planning runs read-only; approving a plan (button or "approve") grants full

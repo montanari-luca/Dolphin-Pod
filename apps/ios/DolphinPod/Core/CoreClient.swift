@@ -52,6 +52,7 @@ final class CoreClient: @unchecked Sendable {
     }
     func stop(_ chatId: String) { core.stopChat(chatId: chatId) }
     func approvePlan(_ messageId: String) async throws { try await core.approvePlan(messageId: messageId) }
+    func chooseDesign(_ messageId: String, choice: String, note: String?) async throws { try await core.chooseDesign(messageId: messageId, choice: choice, note: note) }
     func stageAttachment(name: String, mime: String, data: Data) throws -> Attachment {
         try decode(core.stageAttachment(name: name, mime: mime, bytes: data))
     }

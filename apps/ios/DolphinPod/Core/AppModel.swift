@@ -180,6 +180,13 @@ final class AppModel {
         Task { try? await client?.approvePlan(messageId) }
     }
 
+    /// Answer a design card: "a" or "b" picks that idea, "merge" has a designer write one design from both.
+    func chooseDesign(_ messageId: String, choice: String, note: String? = nil) {
+        Task {
+            do { try await client?.chooseDesign(messageId, choice: choice, note: note) } catch { toast("error", "\(error)") }
+        }
+    }
+
     func createChat(name: String) {
         guard let c = client else { return }
         do {
