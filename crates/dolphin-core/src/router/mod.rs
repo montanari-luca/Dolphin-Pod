@@ -1,6 +1,8 @@
 //! Routing: Roger (moderator) decides, Lincoln (orchestrator) briefs and dispatches, `@mentions` bypass both.
+//! In a development chat the director (Vera) decides and briefs instead.
 
 pub mod ack;
+pub mod director;
 pub mod fallback;
 pub mod mention;
 pub mod moderator;

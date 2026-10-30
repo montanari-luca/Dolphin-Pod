@@ -13,14 +13,24 @@ pub fn rewrite_system(level: Rewrite) -> &'static str {
     }
 }
 
-/// Lincoln's orders, prefixed to the brief.
-pub fn orders(d: &Decision, agent: &Agent, others: &[&Agent]) -> String {
-    let mut s = format!("Lincoln (orchestrator) → {}: you are handling this ({} mode).", agent.name, d.mode.as_str());
+/// The boss's orders, prefixed to the brief: Lincoln's, or the director's in a development chat.
+pub fn orders(d: &Decision, agent: &Agent, others: &[&Agent], boss: &Agent) -> String {
+    let role = if boss.specialty == "director" { "director" } else { "orchestrator" };
+    let mut s = format!("{} ({role}) → {}: you are handling this ({} mode).", boss.name, agent.name, d.mode.as_str());
     if d.mode == Mode::Plan {
         s.push_str(" Plan only: read-only until the user approves.");
     }
     if agent.specialty == "verifier" {
         s.push_str(" The user asked you to double-check the work above: verify what the previous agents did and claimed, with evidence; do not redo it.");
+    }
+    if agent.specialty == "coder" && others.iter().any(|a| a.specialty == "engineer") {
+        s.push_str(" The engineers' plan is in the chat above: build from it, follow its build order, and say briefly where you deviate and why.");
+    }
+    if matches!(agent.specialty.as_str(), "engineer") {
+        s.push_str(" You are engineering this before any code is written: produce your engineering plan, not the implementation.");
+    }
+    if agent.specialty == "designer" {
+        s.push_str(" Work out your own design idea; do not wait for the other designer's.");
     }
     if !others.is_empty() {
         let names: Vec<&str> = others.iter().map(|a| a.name.as_str()).collect();

@@ -17,7 +17,7 @@ use crate::model::*;
 use crate::permissions;
 use crate::providers::{ChatMessage, ChatRequest, Part, Provider, ProviderEvent, Role, ToolCall, image};
 use crate::router::moderator::{self, ModeratorInput};
-use crate::router::{Decision, Mode, ack, mention, orchestrator, prompts, settings_ctl};
+use crate::router::{Decision, Mode, ack, director, mention, orchestrator, prompts, settings_ctl};
 use crate::settings::{self, keys};
 use crate::tools;
 use crate::util::{now_ms, truncate};
@@ -265,8 +265,17 @@ impl Core {
             preferences: &turn.prefs,
             pending_plan_by: pending_by.as_deref(),
         };
-        let roger_model = self.model_handle(&roger, false).ok().map(|(p, mut req)| {
-            req.system = moderator::system_prompt(&input, &roger.name);
+        // In a development chat the director decides in Roger's place; she falls back to Roger's model when she has none.
+        let director = turn.members.iter().find(|a| director::is_director(a)).cloned();
+        let router = director.clone().unwrap_or_else(|| roger.clone());
+        if director.is_some() {
+            self.activity(&turn.chat.id, &router.id, AgentActivity::Routing, None);
+        }
+        let roger_model = self.model_handle(&router, false).or_else(|_| self.model_handle(&roger, false)).ok().map(|(p, mut req)| {
+            req.system = match &director {
+                Some(d) => director::system_prompt(&input, &d.name),
+                None => moderator::system_prompt(&input, &roger.name),
+            };
             let names = |m: &Message| self.author_name(&turn.all_agents, m);
             req.messages = vec![ChatMessage::user(moderator::user_prompt(&input, &names))];
             req.json_mode = true;
@@ -274,12 +283,19 @@ impl Core {
         });
         let started = Instant::now();
         let (decision, err, used) = tokio::select! {
-            r = moderator::decide(roger_model.as_ref().map(|(p, r)| (p.as_ref(), r.clone())), &input) => r,
+            r = async {
+                let model = roger_model.as_ref().map(|(p, r)| (p.as_ref(), r.clone()));
+                match &director {
+                    Some(_) => director::decide(model, &input).await,
+                    None => moderator::decide(model, &input).await,
+                }
+            } => r,
             _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
         };
         self.activity(&turn.chat.id, &roger.id, AgentActivity::Idle, None);
+        self.activity(&turn.chat.id, &router.id, AgentActivity::Idle, None);
         if roger_model.is_some() {
-            self.record_internal_usage(&roger.id, &used, started)?;
+            self.record_internal_usage(&router.id, &used, started)?;
         }
 
         let approving = decision.approves_plan && pending_plan.is_some();
@@ -294,7 +310,8 @@ impl Core {
             "mode": if approving { "implement" } else { decision.mode.as_str() },
             "intent": if approving { "plan approved".to_string() } else { decision.intent.clone() },
             "targets": target_names,
-            "source": decision.source, "needsSetup": self.model_for(&roger).is_none(), "error": err,
+            "source": decision.source, "needsSetup": self.model_for(&router).is_none() && self.model_for(&roger).is_none(), "error": err,
+            "router": router.name,
         }});
         self.save_message(&ack_msg)?;
 
@@ -323,16 +340,19 @@ impl Core {
                 let task = AgentTask::new(Mode::Answer, None, false, json!({ "via": "moderator", "mode": "answer" }));
                 self.run_agent(&turn, &roger, task).await?;
             }
-            mode => self.dispatch(&turn, &decision, mode, &lincoln, &roger).await?,
+            mode => self.dispatch(&turn, &decision, mode, &lincoln, &roger, director.as_ref()).await?,
         }
         Ok(())
     }
 
-    /// Lincoln: brief each target and run them in order (each sees the previous answers).
-    async fn dispatch(self: &Arc<Self>, turn: &Turn, d: &Decision, mode: Mode, lincoln: &Agent, roger: &Agent) -> Result<()> {
+    /// Lincoln (or the director, in a development chat): brief each target and run them in order (each sees the previous answers).
+    /// Before the coder builds from the engineers' plan, the director reviews that plan once.
+    async fn dispatch(self: &Arc<Self>, turn: &Turn, d: &Decision, mode: Mode, lincoln: &Agent, roger: &Agent, director: Option<&Agent>) -> Result<()> {
         let targets: Vec<Agent> = d.targets.iter().filter_map(|id| turn.members.iter().find(|a| &a.id == id).cloned()).collect();
-        let lincoln_model = self.model_handle(lincoln, false).or_else(|_| self.model_handle(roger, false)).ok();
+        let boss = director.unwrap_or(lincoln);
+        let lincoln_model = self.model_handle(boss, false).or_else(|_| self.model_handle(lincoln, false)).or_else(|_| self.model_handle(roger, false)).ok();
         let mut council = council::CouncilState::default();
+        let mut engineered = false;
         for agent in &targets {
             if turn.token.is_cancelled() {
                 return Err(CoreError::Cancelled);
@@ -340,26 +360,39 @@ impl Core {
             if mode == Mode::Plan {
                 self.change_grant(&turn.chat.id, &agent.id, PermissionLevel::ReadOnly, "planning")?;
             }
-            self.activity(&turn.chat.id, &lincoln.id, AgentActivity::Routing, Some(format!("Briefing {}", agent.name)));
+            self.activity(&turn.chat.id, &boss.id, AgentActivity::Routing, Some(format!("Briefing {}", agent.name)));
             let recent = self.recent_context(turn, 6);
             let started = Instant::now();
             let (brief_text, used) = tokio::select! {
                 b = orchestrator::brief(lincoln_model.as_ref().map(|(p, r)| (p.as_ref(), r.clone())), d, agent, &turn.user_msg.content, &recent) => b,
                 _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
             };
-            self.activity(&turn.chat.id, &lincoln.id, AgentActivity::Idle, None);
+            self.activity(&turn.chat.id, &boss.id, AgentActivity::Idle, None);
             if used.input_tokens + used.output_tokens > 0 {
-                self.record_internal_usage(&lincoln.id, &used, started)?;
+                self.record_internal_usage(&boss.id, &used, started)?;
             }
             let others: Vec<&Agent> = targets.iter().filter(|a| a.id != agent.id).collect();
-            let orders = orchestrator::orders(d, agent, &others);
+            let orders = orchestrator::orders(d, agent, &others, boss);
+            let mut brief = format!("{orders}\n\nBrief:\n{brief_text}");
+            if agent.specialty == "coder"
+                && engineered
+                && mode == Mode::Implement
+                && let Some(dir) = director
+                && self.director_review(turn, dir, agent, mode, &mut council).await?
+            {
+                brief.push_str(&format!(
+                    "\n\n{} (director) just reviewed the engineers' plan (her message is above). Adopt what is right, and say in a sentence where you disagree.",
+                    dir.name
+                ));
+            }
             let task = AgentTask::new(
                 mode,
-                Some(format!("{orders}\n\nBrief:\n{brief_text}")),
+                Some(brief),
                 mode == Mode::Plan,
-                json!({ "via": "lincoln", "mode": mode.as_str(), "rewrite": d.rewrite, "brief": brief_text }),
+                json!({ "via": if director.is_some() { "director" } else { "lincoln" }, "mode": mode.as_str(), "rewrite": d.rewrite, "brief": brief_text }),
             );
             self.run_specialist(turn, agent, task, &mut council).await?;
+            engineered |= agent.specialty == "engineer";
         }
         Ok(())
     }

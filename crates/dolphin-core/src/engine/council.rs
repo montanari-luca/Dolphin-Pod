@@ -119,16 +119,43 @@ impl Core {
     /// One read-only critique, posted in the chat under the council's name. Returns whether there is one for the specialist to read;
     /// a council that failed never stops the task.
     async fn run_council(self: &Arc<Self>, turn: &Turn, council: &Agent, agent: &Agent, model: ModelRef, mode: Mode, ask: String) -> Result<bool> {
+        self.run_critic(turn, council, agent, model, mode, ask).await
+    }
+
+    /// The director's one critique of the engineers' plan, before the coder builds from it. It counts as this turn's review,
+    /// so the council stays out. Returns whether there is a critique for the coder to read; no model means no review.
+    pub(super) async fn director_review(
+        self: &Arc<Self>,
+        turn: &Turn,
+        director: &Agent,
+        coder: &Agent,
+        mode: Mode,
+        state: &mut CouncilState,
+    ) -> Result<bool> {
+        if state.convened || turn.user_msg.meta.get("automation").is_some() {
+            return Ok(false);
+        }
+        let Some(model) = self.council_model(director, turn) else { return Ok(false) };
+        state.convened = true;
+        let ask = format!(
+            "The engineers wrote their engineering plan in the chat above, and {} will build from it next. Give your one critique of that plan. Reply in this shape and nothing more: **What's solid**, **Risks and gaps** (what is missing, unsafe or untested), **Build it this way** (concrete changes in priority order). Keep it short.",
+            coder.name
+        );
+        self.run_critic(turn, director, coder, model, mode, ask).await
+    }
+
+    /// The critic is the council or the director; its specialty names who is speaking.
+    async fn run_critic(self: &Arc<Self>, turn: &Turn, critic: &Agent, agent: &Agent, model: ModelRef, mode: Mode, ask: String) -> Result<bool> {
         let mut task = AgentTask::new(
             Mode::Answer,
             Some(ask),
             false,
-            json!({ "via": "council", "mode": mode.as_str(), "council": { "role": "critic", "for": agent.name } }),
+            json!({ "via": critic.specialty, "mode": mode.as_str(), "council": { "role": "critic", "for": agent.name } }),
         );
         task.level_override = Some(PermissionLevel::ReadOnly);
-        task.delegated_by = Some(council.name.clone());
+        task.delegated_by = Some(critic.name.clone());
         task.model_override = Some(model);
-        let m = self.run_agent(turn, council, task).await?;
+        let m = self.run_agent(turn, critic, task).await?;
         Ok(m.status == MessageStatus::Done && !m.content.trim().is_empty())
     }
 }

@@ -239,15 +239,15 @@ pub const CHATS: &[ChatSeed] = &[
         name: "Game Development",
         icon: "gamepad-2",
         agents: &[
-            "vera", "nolan", "priya", "mira", "kai", "rick", "jordan", "ducky", "viktor", "prof", "robert", "amelia", "luna", "council", "tilda",
-            "jules", "sonia", "wren",
+            "vera", "nolan", "priya", "mira", "kai", "rick", "micheal", "jordan", "ducky", "viktor", "prof", "robert", "amelia", "luna", "council",
+            "tilda", "jules", "sonia", "wren",
         ],
     },
 ];
 
 /// The specialists of the development chats; the game chat adds the game specialists on top.
-const DEV_TEAM: [&str; 14] =
-    ["vera", "nolan", "priya", "mira", "kai", "rick", "jordan", "ducky", "viktor", "prof", "robert", "amelia", "luna", "council"];
+const DEV_TEAM: [&str; 15] =
+    ["vera", "nolan", "priya", "mira", "kai", "rick", "micheal", "jordan", "ducky", "viktor", "prof", "robert", "amelia", "luna", "council"];
 
 /// Default chats added after the first release. Existing pods get them once, through `seed_new_chats_if_needed`.
 const CHATS_V2: &[&str] = &["Software Development", "Web Development", "Game Development"];

@@ -11,6 +11,11 @@ const RULES: &[(&str, &[&str])] = &[
     ("debug", &["bug", "error", "stack trace", "traceback", "exception", "crash", "doesn't work", "not working", "fails", "failing", "debug", "segfault", "panic"]),
     ("git", &["git ", "commit", "rebase", "stash", "branch", "merge conflict", "push to", "push my", "push the", "pull from", "pull the latest", "git history"]),
     ("docs", &["readme", "documentation", "docs", "docstring", "api reference", "changelog", "write up"]),
+    ("designer", &["design", "mockup", "wireframe", "ui ", "ux ", "layout", "look and feel", "branding", "landing page", "color palette"]),
+    ("level_designer", &["level design", "level layout", "level for", "levels", "map layout", "encounter", "difficulty curve", "dungeon"]),
+    ("artist_3d", &["3d model", "3d asset", "3d art", "mesh", "rigging", "texture", "blender", "low poly", "low-poly"]),
+    ("audio_designer", &["sound effect", "sfx", "soundtrack", "music", "audio", "sound design"]),
+    ("story_designer", &["storyline", "quest", "lore", "dialogue", "narrative", "plot", "backstory", "game story"]),
     ("creative", &["story", "poem", "lyrics", "novel", "screenplay", "script for", "slogan", "tagline", "creative", "character", "haiku"]),
     ("long_horizon", &["project", "roadmap", "milestone", "multi-step", "end to end", "architecture", "migrate"]),
     ("teacher", &["learn", "teach", "explain", "understand", "what is", "how does", "why does", "tutorial", "lesson", "course"]),
@@ -50,7 +55,7 @@ pub fn route(text: &str, chat_agents: &[Agent], prefers_quick: bool) -> Decision
     if has(&t, INTERNAL) {
         return Decision { mode: Mode::Internal, intent: "settings or housekeeping".into(), ..Decision::default() };
     }
-    let specialists: Vec<&Agent> = chat_agents.iter().filter(|a| a.role == AgentRole::Specialist && a.specialty != "council").collect();
+    let specialists: Vec<&Agent> = chat_agents.iter().filter(|a| a.role == AgentRole::Specialist && a.specialty != "council" && a.specialty != "director").collect();
     let padded = format!("{t} ");
     let mode = if has(&padded, PLAN) {
         Mode::Plan

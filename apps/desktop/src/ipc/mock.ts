@@ -345,9 +345,9 @@ export function mockBackend(): MockBackend {
     ["Long Horizon Agentic", "rocket", ["micheal", "rick", "jordan", "robert", "amelia", "luna", "council"]],
     ["Learning", "graduation-cap", ["prof", "ducky", "ruby", "luna"]],
     ["Creative", "palette", ["emma", "sarah", "ruby"]],
-    ["Software Development", "terminal", ["vera", "nolan", "priya", "mira", "kai", "rick", "jordan", "ducky", "viktor", "prof", "robert", "amelia", "luna", "council"]],
-    ["Web Development", "globe", ["vera", "nolan", "priya", "mira", "kai", "rick", "jordan", "ducky", "viktor", "prof", "robert", "amelia", "luna", "council", ]],
-    ["Game Development", "gamepad-2", ["vera", "nolan", "priya", "mira", "kai", "rick", "jordan", "ducky", "viktor", "prof", "robert", "amelia", "luna", "council", "tilda", "jules", "sonia", "wren"]],
+    ["Software Development", "terminal", ["vera", "nolan", "priya", "mira", "kai", "rick", "micheal", "jordan", "ducky", "viktor", "prof", "robert", "amelia", "luna", "council"]],
+    ["Web Development", "globe", ["vera", "nolan", "priya", "mira", "kai", "rick", "micheal", "jordan", "ducky", "viktor", "prof", "robert", "amelia", "luna", "council", ]],
+    ["Game Development", "gamepad-2", ["vera", "nolan", "priya", "mira", "kai", "rick", "micheal", "jordan", "ducky", "viktor", "prof", "robert", "amelia", "luna", "council", "tilda", "jules", "sonia", "wren"]],
   ].map(([name, icon, slugs], i) => ({
     id: `c-${i}`,
     name: name as string,

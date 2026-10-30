@@ -35,11 +35,16 @@ pub fn is_council(a: &Agent) -> bool {
     a.specialty == "council"
 }
 
+/// Agents that are never a routing target: the council reviews on its own, the director does the routing in its chats.
+pub fn is_unrouted(a: &Agent) -> bool {
+    is_council(a) || a.specialty == "director"
+}
+
 pub fn system_prompt(i: &ModeratorInput, roger: &str) -> String {
     let roster: Vec<String> = i
         .members
         .iter()
-        .filter(|a| a.role == AgentRole::Specialist && !is_council(a))
+        .filter(|a| a.role == AgentRole::Specialist && !is_unrouted(a))
         .map(|a| format!("- {} [{}]: {}", a.name, a.specialty, first_sentence(&a.job)))
         .collect();
     let prefs = if i.preferences.is_empty() { "(none)".to_string() } else { i.preferences.join("\n") };
@@ -122,9 +127,17 @@ pub fn prefers_quick(preferences: &[String]) -> bool {
 
 /// Validate a model reply into a decision that respects the chat's members and the routing rules.
 pub fn parse_decision(reply: &str, members: &[Agent], user_text: &str, preferences: &[String]) -> Option<Decision> {
+    parse_decision_with(reply, members, user_text, preferences, MAX_TARGETS)
+}
+
+/// How many specialists the moderator may name for one request.
+const MAX_TARGETS: usize = 3;
+
+/// `parse_decision` with a different cap on the number of targets (the director runs bigger teams).
+pub fn parse_decision_with(reply: &str, members: &[Agent], user_text: &str, preferences: &[String], max_targets: usize) -> Option<Decision> {
     let raw: RawDecision = serde_json::from_str(extract_json_object(reply)?).ok()?;
     let mut mode = parse_mode(raw.mode.as_deref()?)?;
-    let specialists: Vec<&Agent> = members.iter().filter(|a| a.role == AgentRole::Specialist && !is_council(a)).collect();
+    let specialists: Vec<&Agent> = members.iter().filter(|a| a.role == AgentRole::Specialist && !is_unrouted(a)).collect();
     let mut targets: Vec<String> = Vec::new();
     for t in &raw.targets {
         let t = t.trim().trim_start_matches('@').to_lowercase();
@@ -140,7 +153,7 @@ pub fn parse_decision(reply: &str, members: &[Agent], user_text: &str, preferenc
     if let Some(v) = &verifier {
         targets.retain(|t| t != v);
     }
-    targets.truncate(if verify { 2 } else { 3 });
+    targets.truncate(if verify { max_targets - 1 } else { max_targets });
     if verify && let Some(v) = verifier {
         targets.push(v);
     }
@@ -195,11 +208,21 @@ pub fn parse_decision(reply: &str, members: &[Agent], user_text: &str, preferenc
 /// Run the moderator model; fall back to keywords if it is unavailable or unusable.
 /// Returns the decision, the model error (if it fell back) and the tokens the moderator used.
 pub async fn decide(provider: Option<(&dyn Provider, ChatRequest)>, input: &ModeratorInput<'_>) -> (Decision, Option<String>, Usage) {
+    let parse = |text: &str| parse_decision(text, input.members, input.user_text, input.preferences);
     let fallback = || {
         let mut d = fallback::route(input.user_text, input.members, prefers_quick(input.preferences));
         d.source = "fallback".into();
         d
     };
+    decide_with(provider, &parse, &fallback).await
+}
+
+/// The model loop shared by the moderator and the director: one repair retry on an unusable reply, then `fallback`.
+pub async fn decide_with(
+    provider: Option<(&dyn Provider, ChatRequest)>,
+    parse: &(dyn Fn(&str) -> Option<Decision> + Sync),
+    fallback: &(dyn Fn() -> Decision + Sync),
+) -> (Decision, Option<String>, Usage) {
     let Some((provider, mut req)) = provider else { return (fallback(), None, Usage::default()) };
     let mut last_err = None;
     let mut used = Usage::default();
@@ -208,7 +231,7 @@ pub async fn decide(provider: Option<(&dyn Provider, ChatRequest)>, input: &Mode
             Ok((text, u)) => {
                 used.input_tokens += u.input_tokens;
                 used.output_tokens += u.output_tokens;
-                if let Some(d) = parse_decision(&text, input.members, input.user_text, input.preferences) {
+                if let Some(d) = parse(&text) {
                     return (d, None, used);
                 }
                 if attempt == 0 {
