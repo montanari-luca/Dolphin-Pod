@@ -79,6 +79,12 @@ impl Core {
         sum: Option<&Summarizer>,
     ) -> Result<Vec<ChatMessage>> {
         let cfg = rc.settings;
+        // Two designers working side by side must not see each other's idea, even if one of them finishes first (the merge sees both).
+        let blind_group = self.db
+            .get_message(exclude)
+            .ok()
+            .filter(|m| matches!(m.meta["designOption"]["label"].as_str(), Some("A" | "B")))
+            .and_then(|m| m.meta["designOption"]["group"].as_str().map(String::from));
         let mut saved = self.saved_summary(&turn.chat.id);
         let boundary = saved.as_ref().map(|s| (s.up_to_created_at, s.up_to_id.clone()));
         let fetch = if cfg.auto_compact { 600 } else { cfg.history_messages };
@@ -87,6 +93,7 @@ impl Core {
             .list_messages(&turn.chat.id, fetch)?
             .into_iter()
             .filter(|m| m.id != exclude && m.status != MessageStatus::Streaming && !matches!(m.kind, MessageKind::Ack | MessageKind::Notice))
+            .filter(|m| blind_group.as_deref().is_none_or(|g| m.meta["designOption"]["group"].as_str() != Some(g)))
             .filter(|m| !(m.content.trim().is_empty() && m.attachments.is_empty()))
             .filter(|m| boundary.as_ref().is_none_or(|(at, id)| (m.created_at, m.id.as_str()) > (*at, id.as_str())))
             .collect();

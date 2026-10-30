@@ -71,6 +71,8 @@ export interface Backend {
   sendMessage(chatId: string, text: string, attachmentIds: string[]): Promise<Message>;
   stopChat(chatId: string): Promise<void>;
   approvePlan(messageId: string): Promise<void>;
+  /** Answer a design card: pick idea A or B, or have a designer merge them (with a note on how). */
+  chooseDesign(messageId: string, choice: "a" | "b" | "merge", note?: string): Promise<void>;
   grantPermission(chatId: string, agentId: string, level: PermissionLevel): Promise<PermissionGrant>;
   grants(chatId: string): Promise<PermissionGrant[]>;
   /** The unified diff of everything an agent's message changed in the workspace. */

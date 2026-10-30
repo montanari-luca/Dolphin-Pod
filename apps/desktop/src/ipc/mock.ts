@@ -678,6 +678,24 @@ export function mockBackend(): MockBackend {
           });
         }
         if (mention) return stream(chatId, mention.id, "text", { via: "mention" });
+        // Demo of the design card: in a development chat, "design ..." has Mira and Kai each write an idea, then Vera asks which one.
+        if (/design/i.test(text) && chats.find((c) => c.id === chatId)?.name.endsWith("Development")) {
+          const group = `g-${Date.now()}`;
+          const ideas = [
+            ["mira", "A", "**Concept.** A bold, warm hero with a big roasting-process illustration.\n\n**Structure.** Hero, story, menu grid, visit us.\n\n**Look and feel.** Deep espresso browns, cream, a playful serif."],
+            ["kai", "B", "**Concept.** A quiet, typographic page that lets the menu speak.\n\n**Structure.** Menu first, hours, one photo.\n\n**Look and feel.** White space, one accent color, a clean sans."],
+          ] as const;
+          const options = ideas.map(([slug, label, body]) => {
+            const m = msg(chatId, id(slug), "text", body);
+            m.meta = { routing: { via: "director", mode: "implement" }, tools: [], designOption: { group, label } };
+            push(m);
+            return { label, agentId: id(slug), messageId: m.id };
+          });
+          const card = msg(chatId, id("vera"), "text", "Two design ideas are ready: **Mira** (A) and **Kai** (B). Pick one, or merge them.");
+          card.meta = { designChoice: { group, state: "pending", options } };
+          push(card);
+          return;
+        }
         const ack = msg(chatId, id("roger"), "ack", "Give me a sec, I'll find the right person for this.");
         ack.meta = { routing: { status: "routing" } };
         push(ack);
@@ -733,6 +751,16 @@ export function mockBackend(): MockBackend {
           ),
         );
         void stream(m.chatId, m.agentId!, "text", { via: "lincoln", mode: "implement" });
+      }
+    },
+    async chooseDesign(messageId, choice, note) {
+      for (const list of messages.values()) {
+        const m = list.find((x) => x.id === messageId);
+        if (!m) continue;
+        const dc = (m.meta as { designChoice?: Record<string, unknown> }).designChoice;
+        if (!dc || dc.state !== "pending") continue;
+        m.meta = { ...(m.meta as object), designChoice: { ...dc, state: "decided", picked: choice, note: note ?? null } };
+        update(m);
       }
     },
     async grantPermission(chatId, agentId, level) {

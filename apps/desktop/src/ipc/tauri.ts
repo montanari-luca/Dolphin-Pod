@@ -35,6 +35,7 @@ export function tauriBackend(): Backend {
     sendMessage: (chatId, text, attachmentIds) => invoke("send_message", { chatId, text, attachmentIds }),
     stopChat: (chatId) => invoke("stop_chat", { chatId }),
     approvePlan: (messageId) => invoke("approve_plan", { messageId }),
+    chooseDesign: (messageId, choice, note) => invoke("choose_design", { messageId, choice, note: note ?? null }),
     grantPermission: (chatId, agentId, level) => invoke("grant_permission", { chatId, agentId, level }),
     grants: (chatId) => invoke("grants", { chatId }),
     runDiff: (messageId) => invoke("run_diff", { messageId }),

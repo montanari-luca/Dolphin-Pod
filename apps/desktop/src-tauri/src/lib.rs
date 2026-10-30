@@ -171,6 +171,11 @@ async fn approve_plan(core: State<'_, CoreRef>, message_id: String) -> Res<()> {
 }
 
 #[tauri::command]
+async fn choose_design(core: State<'_, CoreRef>, message_id: String, choice: String, note: Option<String>) -> Res<()> {
+    core.choose_design(&message_id, &choice, note.as_deref()).await
+}
+
+#[tauri::command]
 fn grant_permission(core: State<CoreRef>, chat_id: String, agent_id: String, level: PermissionLevel) -> Res<PermissionGrant> {
     core.grant_permission(&chat_id, &agent_id, level)
 }
@@ -513,6 +518,7 @@ pub fn run() {
             send_message,
             stop_chat,
             approve_plan,
+            choose_design,
             grant_permission,
             grants,
             run_diff,

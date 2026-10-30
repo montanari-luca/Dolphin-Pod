@@ -26,6 +26,7 @@ mod changes;
 mod council;
 mod ctx;
 mod delegate;
+mod design;
 mod git;
 mod embedding;
 mod guard;
@@ -58,11 +59,13 @@ struct AgentTask {
     delegated_by: Option<String>,
     /// Run on this model instead of the agent's own (the council, when it has none of its own).
     model_override: Option<ModelRef>,
+    /// Fields added to the message's meta as they are (a design idea's group and label).
+    meta_extra: Option<Value>,
 }
 
 impl AgentTask {
     fn new(mode: Mode, brief: Option<String>, plan: bool, routing: Value) -> Self {
-        Self { mode, brief, plan, routing, level_override: None, delegated_by: None, model_override: None }
+        Self { mode, brief, plan, routing, level_override: None, delegated_by: None, model_override: None, meta_extra: None }
     }
 }
 
@@ -340,40 +343,42 @@ impl Core {
                 let task = AgentTask::new(Mode::Answer, None, false, json!({ "via": "moderator", "mode": "answer" }));
                 self.run_agent(&turn, &roger, task).await?;
             }
-            mode => self.dispatch(&turn, &decision, mode, &lincoln, &roger, director.as_ref()).await?,
+            _ => self.dispatch(&turn, &decision, &lincoln, &roger, director.as_ref(), None).await?,
         }
         Ok(())
     }
 
     /// Lincoln (or the director, in a development chat): brief each target and run them in order (each sees the previous answers).
-    /// Before the coder builds from the engineers' plan, the director reviews that plan once.
-    async fn dispatch(self: &Arc<Self>, turn: &Turn, d: &Decision, mode: Mode, lincoln: &Agent, roger: &Agent, director: Option<&Agent>) -> Result<()> {
+    /// Before the coder builds from the engineers' plan, the director reviews that plan once. When the director has two designers
+    /// on the job they work in parallel and the run pauses on a card for the user to pick or merge their ideas; `extra` carries that
+    /// choice into the briefs of the agents who work afterwards.
+    async fn dispatch(self: &Arc<Self>, turn: &Turn, d: &Decision, lincoln: &Agent, roger: &Agent, director: Option<&Agent>, extra: Option<&str>) -> Result<()> {
+        let mode = d.mode;
         let targets: Vec<Agent> = d.targets.iter().filter_map(|id| turn.members.iter().find(|a| &a.id == id).cloned()).collect();
         let boss = director.unwrap_or(lincoln);
-        let lincoln_model = self.model_handle(boss, false).or_else(|_| self.model_handle(lincoln, false)).or_else(|_| self.model_handle(roger, false)).ok();
+        let boss_model = self.model_handle(boss, false).or_else(|_| self.model_handle(lincoln, false)).or_else(|_| self.model_handle(roger, false)).ok();
         let mut council = council::CouncilState::default();
         let mut engineered = false;
-        for agent in &targets {
+        let pair = if director.is_some() && mode != Mode::Plan { design::designer_pair(&targets) } else { None };
+        for (i, agent) in targets.iter().enumerate() {
             if turn.token.is_cancelled() {
                 return Err(CoreError::Cancelled);
+            }
+            if let Some((first, second)) = pair {
+                if i == second {
+                    continue;
+                }
+                if i == first {
+                    if self.design_round(turn, d, &targets, (first, second), boss, boss_model.as_ref(), extra).await? {
+                        return Ok(());
+                    }
+                    continue;
+                }
             }
             if mode == Mode::Plan {
                 self.change_grant(&turn.chat.id, &agent.id, PermissionLevel::ReadOnly, "planning")?;
             }
-            self.activity(&turn.chat.id, &boss.id, AgentActivity::Routing, Some(format!("Briefing {}", agent.name)));
-            let recent = self.recent_context(turn, 6);
-            let started = Instant::now();
-            let (brief_text, used) = tokio::select! {
-                b = orchestrator::brief(lincoln_model.as_ref().map(|(p, r)| (p.as_ref(), r.clone())), d, agent, &turn.user_msg.content, &recent) => b,
-                _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
-            };
-            self.activity(&turn.chat.id, &boss.id, AgentActivity::Idle, None);
-            if used.input_tokens + used.output_tokens > 0 {
-                self.record_internal_usage(&boss.id, &used, started)?;
-            }
-            let others: Vec<&Agent> = targets.iter().filter(|a| a.id != agent.id).collect();
-            let orders = orchestrator::orders(d, agent, &others, boss);
-            let mut brief = format!("{orders}\n\nBrief:\n{brief_text}");
+            let (mut brief, brief_text) = self.brief_for(turn, d, agent, &targets, boss, boss_model.as_ref(), extra).await?;
             if agent.specialty == "coder"
                 && engineered
                 && mode == Mode::Implement
@@ -381,7 +386,7 @@ impl Core {
                 && self.director_review(turn, dir, agent, mode, &mut council).await?
             {
                 brief.push_str(&format!(
-                    "\n\n{} (director) just reviewed the engineers' plan (her message is above). Adopt what is right, and say in a sentence where you disagree.",
+                    "\n\n{} (director) just reviewed the engineers' plan (the review is above). Adopt what is right, and say in a sentence where you disagree.",
                     dir.name
                 ));
             }
@@ -395,6 +400,39 @@ impl Core {
             engineered |= agent.specialty == "engineer";
         }
         Ok(())
+    }
+
+    /// The boss's orders and brief for one agent (Lincoln's, or the director's in a development chat), with the cost of the brief
+    /// counted for the boss. Returns the full text for the agent and the brief alone.
+    #[allow(clippy::too_many_arguments)]
+    async fn brief_for(
+        self: &Arc<Self>,
+        turn: &Turn,
+        d: &Decision,
+        agent: &Agent,
+        targets: &[Agent],
+        boss: &Agent,
+        model: Option<&ModelHandle>,
+        extra: Option<&str>,
+    ) -> Result<(String, String)> {
+        self.activity(&turn.chat.id, &boss.id, AgentActivity::Routing, Some(format!("Briefing {}", agent.name)));
+        let recent = self.recent_context(turn, 6);
+        let started = Instant::now();
+        let (brief_text, used) = tokio::select! {
+            b = orchestrator::brief(model.map(|(p, r)| (p.as_ref(), r.clone())), d, agent, &turn.user_msg.content, &recent) => b,
+            _ = turn.token.cancelled() => return Err(CoreError::Cancelled),
+        };
+        self.activity(&turn.chat.id, &boss.id, AgentActivity::Idle, None);
+        if used.input_tokens + used.output_tokens > 0 {
+            self.record_internal_usage(&boss.id, &used, started)?;
+        }
+        let others: Vec<&Agent> = targets.iter().filter(|a| a.id != agent.id).collect();
+        let orders = orchestrator::orders(d, agent, &others, boss);
+        let mut brief = format!("{orders}\n\nBrief:\n{brief_text}");
+        if let Some(x) = extra {
+            brief.push_str(&format!("\n\n{x}"));
+        }
+        Ok((brief, brief_text))
     }
 
     async fn run_approved_plan(self: &Arc<Self>, chat: &Chat, mut plan: Message, token: &CancellationToken) -> Result<()> {
@@ -533,6 +571,11 @@ impl Core {
         // The council's critique and the draft it reviews are labelled even when briefs are hidden.
         if let Some(c) = task.routing.get("council") {
             msg.meta["council"] = c.clone();
+        }
+        if let Some(Value::Object(extra)) = &task.meta_extra {
+            for (k, v) in extra {
+                msg.meta[k] = v.clone();
+            }
         }
         self.insert_message(&msg)?;
         self.activity(&turn.chat.id, &agent.id, AgentActivity::Thinking, None);

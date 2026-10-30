@@ -241,6 +241,11 @@ impl DolphinCore {
         Ok(self.core.approve_plan(&message_id).await?)
     }
 
+    /// Answer a design card: `choice` is "a", "b" or "merge" (with an optional note on how to merge).
+    pub async fn choose_design(&self, message_id: String, choice: String, note: Option<String>) -> R<()> {
+        Ok(self.core.choose_design(&message_id, &choice, note.as_deref()).await?)
+    }
+
     pub fn stage_attachment(&self, name: String, mime: String, bytes: Vec<u8>) -> R<String> {
         json(&self.core.stage_attachment(&name, &mime, &bytes)?)
     }

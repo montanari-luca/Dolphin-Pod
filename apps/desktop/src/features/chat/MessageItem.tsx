@@ -6,6 +6,7 @@ import { AgentAvatar, AgentHoverCard, AgentName } from "@/components/agent";
 import { UserAvatar, UserHoverCard, UserNameText } from "@/components/user";
 import { Markdown } from "@/components/Markdown";
 import { ThinkingBlock } from "@/components/ThinkingBlock";
+import { DesignChoiceCard, type DesignChoice } from "./DesignChoiceCard";
 import { Badge, Button, ConfirmDialog, Dialog } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { formatBytes, formatDuration, formatTime, formatTokens } from "@/lib/format";
@@ -18,6 +19,9 @@ type Meta = {
   plan?: { approved?: boolean };
   /** DP Council: its critique ("critic", with the agent it reviews) or the plan draft it reviewed ("draft"). */
   council?: { role: "critic" | "draft"; for?: string };
+  /** One of the two parallel design ideas ("merged" for the merge), and the card that asks the user to pick one. */
+  designOption?: { group: string; label: "A" | "B" | "merged" };
+  designChoice?: DesignChoice;
   changes?: { before: string; after: string; files: FileChange[]; reverted: boolean; revert?: RevertReport };
   changesUnavailable?: string;
   needsSetup?: boolean;
@@ -62,6 +66,7 @@ export const MessageItem = memo(function MessageItem({ message, agent, grouped }
             {!isUser && !meta.council?.for && meta.routing?.mode && meta.routing.mode !== "answer" && <Badge tone={meta.routing.mode === "plan" ? "warning" : "accent"}>{MODE_LABEL[meta.routing.mode] ?? meta.routing.mode}</Badge>}
             {meta.council?.role === "critic" && <Badge tone="accent">{meta.council.for ? `reviewing for ${meta.council.for}` : "review"}</Badge>}
             {meta.council?.role === "draft" && <Badge>draft</Badge>}
+            {meta.designOption && <Badge tone="accent">{meta.designOption.label === "merged" ? "merged design" : `idea ${meta.designOption.label}`}</Badge>}
             {meta.routing?.via === "mention" && <Badge>direct</Badge>}
             <span className="text-[11px] text-faint tabular-nums">{formatTime(message.createdAt)}</span>
             {isUser && meta.remote && <Badge tone="accent">{meta.remoteDevice ? `via ${meta.remoteDevice}` : meta.remoteTarget ? `sent to ${meta.remoteTarget}` : "remote"}</Badge>}
@@ -78,6 +83,7 @@ export const MessageItem = memo(function MessageItem({ message, agent, grouped }
           </div>
         )}
 
+        {meta.designChoice && <DesignChoiceCard message={message} choice={meta.designChoice} />}
         {meta.tools && meta.tools.length > 0 && <ToolActivity tools={meta.tools} />}
         {meta.changes && <Changes message={message} changes={meta.changes} />}
         {meta.changesUnavailable && !meta.changes && <div className="mt-1 text-[11.5px] text-faint">Undo unavailable for this run: {meta.changesUnavailable}</div>}
