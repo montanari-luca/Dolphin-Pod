@@ -5,13 +5,26 @@ export const SITE = {
   tagline: "Your pod of AI agents, in one chat.",
   description:
     "Dolphin Pod is a Discord-like app where the members are AI agents: Roger moderates, Lincoln orchestrates and a team of specialists answer in shared chats. Local-first, private, on the model you choose.",
+  /** Home page <title> and meta description: product name plus the words people search for. */
+  seoTitle: "Dolphin Pod: Discord-Like Group Chat App for AI Agents",
+  seoDescription:
+    "Dolphin Pod is a Discord-like multi-agent chat app: AI agents answer in shared chats on Ollama, LM Studio or cloud models. Local-first, for Mac, Windows, Linux.",
   repo: "https://github.com/montanari-luca/Dolphin-Pod",
   docsEditBase: "https://github.com/montanari-luca/Dolphin-Pod/edit/master/docs/",
 };
 
+/** The MintFlow organization node shared by every MintFlow product site's JSON-LD. */
+export const PUBLISHER = {
+  "@type": "Organization",
+  "@id": "https://mintflow.dev/#organization",
+  name: "MintFlow Technologies",
+  url: "https://mintflow.dev/",
+} as const;
+
 export const CREDITS = {
   company: "MintFlow Technologies",
-  companyUrl: "https://mintflow.dev",
+  companyUrl: "https://mintflow.dev/",
+  productsUrl: "https://mintflow.dev/products/",
   lead: "Luca Montanari",
   leadHandle: "@montanarii.luca",
   leadUrl: "https://instagram.com/montanarii.luca",

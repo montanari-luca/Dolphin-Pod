@@ -21,5 +21,5 @@ workspace package. It reuses the app's design tokens (`@dolphin/shared/tokens.cs
 - **Screenshots**: drop PNGs into `src/assets/screenshots/` (see the README there).
 - **Motion** effects are small scripts using the framework-agnostic `motion` API, load only on pages that use
   them, and are off under `prefers-reduced-motion`.
-- **Domain**: set the `SITE_URL` env var when building (default `https://dolphinpod.app`) and update the sitemap
-  line in `public/robots.txt`.
+- **Domain**: set the `SITE_URL` env var when building only to override the production origin (default `https://dolphin.mintflow.dev`) and keep the sitemap
+  line in `public/robots.txt` in sync.

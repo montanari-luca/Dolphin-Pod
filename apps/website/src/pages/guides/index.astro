@@ -5,7 +5,11 @@ import { allDocs, routeFor, summaryOf, titleOf } from "../../lib/docs";
 const { guides } = await allDocs();
 ---
 
-<BaseLayout title="Guides" description="Step-by-step guides for setting up models and providers in Dolphin Pod.">
+<BaseLayout
+  title="Dolphin Pod Guides: Set Up Local and Cloud AI Models"
+  description="Step-by-step Dolphin Pod guides for connecting models: run local AI with Ollama or LM Studio, or use cloud reasoning models through OpenRouter."
+  breadcrumbs={[{ name: "Guides", path: "/guides/" }]}
+>
   <div class="container-page py-14 md:py-20">
     <p class="eyebrow mb-2" data-reveal>Guides</p>
     <h1 class="text-4xl font-bold tracking-tight md:text-5xl" data-reveal data-reveal-delay="0.05">Set up your models.</h1>

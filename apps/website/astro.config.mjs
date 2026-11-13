@@ -5,13 +5,13 @@ import { unified } from "@astrojs/markdown-remark";
 import tailwindcss from "@tailwindcss/vite";
 import { rehypeDocLinks } from "./src/lib/rehype-doc-links.mjs";
 
-// Set SITE_URL once the domain is decided (sitemap and canonical/OG URLs use it).
-const site = process.env.SITE_URL ?? "https://dolphinpod.app";
+// Production origin: canonical, Open Graph and sitemap URLs are built from it. SITE_URL overrides it for previews.
+const site = process.env.SITE_URL ?? "https://dolphin.mintflow.dev";
 
 export default defineConfig({
   site,
   output: "static",
-  integrations: [mdx(), sitemap({ filter: (page) => !page.endsWith("/docs/") })],
+  integrations: [mdx(), sitemap({ filter: (page) => !page.endsWith("/docs/") && !/\/404\/?$/.test(page) })],
   vite: { plugins: [tailwindcss()] },
   markdown: {
     processor: unified({ rehypePlugins: [rehypeDocLinks] }),

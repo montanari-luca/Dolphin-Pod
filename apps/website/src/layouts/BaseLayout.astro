@@ -4,20 +4,55 @@ import "@fontsource/jetbrains-mono/400.css";
 import "../styles/global.css";
 import Header from "../components/Header.astro";
 import Footer from "../components/Footer.astro";
-import { SITE } from "../lib/site";
+import { PUBLISHER, SITE } from "../lib/site";
 import { loadManifest } from "../lib/manifest";
 
+type Crumb = { name: string; path: string };
 interface Props {
+  /** The full <title>, used as-is. Defaults to the home page title. */
   title?: string;
   description?: string;
   /** Page-specific Open Graph type. */
   type?: "website" | "article";
+  /** Keep the page out of search results (404). */
+  noindex?: boolean;
+  /** Trail after Home for the BreadcrumbList JSON-LD (subpages only). */
+  breadcrumbs?: Crumb[];
+  /** Extra JSON-LD nodes for this page, merged into the page's @graph. */
+  schema?: Record<string, unknown>[];
 }
-const { title, description = SITE.description, type = "website" } = Astro.props;
-const fullTitle = title ? `${title} · ${SITE.name}` : `${SITE.name}: ${SITE.tagline}`;
+const { title = SITE.seoTitle, description = SITE.seoDescription, type = "website", noindex = false, breadcrumbs, schema = [] } = Astro.props;
 const canonical = new URL(Astro.url.pathname, Astro.site);
 const manifest = await loadManifest();
 const ogImage = new URL("/og-image.png", Astro.site);
+const home = new URL("/", Astro.site).href;
+
+const graph: Record<string, unknown>[] = [
+  {
+    "@type": "WebSite",
+    "@id": `${home}#website`,
+    url: home,
+    name: SITE.name,
+    description: SITE.seoDescription,
+    inLanguage: "en",
+    publisher: PUBLISHER,
+  },
+  ...(breadcrumbs?.length
+    ? [
+        {
+          "@type": "BreadcrumbList",
+          itemListElement: [{ name: SITE.name, path: "/" }, ...breadcrumbs].map((c, i) => ({
+            "@type": "ListItem",
+            position: i + 1,
+            name: c.name,
+            item: new URL(c.path, Astro.site).href,
+          })),
+        },
+      ]
+    : []),
+  ...schema,
+];
+const jsonLd = JSON.stringify({ "@context": "https://schema.org", "@graph": graph }).replace(/</g, "\\u003c");
 ---
 
 <!doctype html>
@@ -25,9 +60,10 @@ const ogImage = new URL("/og-image.png", Astro.site);
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{fullTitle}</title>
+    <title>{title}</title>
     <meta name="description" content={description} />
-    <link rel="canonical" href={canonical} />
+    {!noindex && <link rel="canonical" href={canonical} />}
+    <meta name="robots" content={noindex ? "noindex, follow" : "index, follow, max-image-preview:large"} />
     <meta name="theme-color" content="#0b1020" />
     <meta name="color-scheme" content="dark light" />
 
@@ -40,14 +76,20 @@ const ogImage = new URL("/og-image.png", Astro.site);
 
     <meta property="og:site_name" content={SITE.name} />
     <meta property="og:type" content={type} />
-    <meta property="og:title" content={fullTitle} />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
     <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={`${SITE.name}: ${SITE.tagline}`} />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content={fullTitle} />
+    <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={ogImage} />
+    <meta name="twitter:image:alt" content={`${SITE.name}: ${SITE.tagline}`} />
+    <script type="application/ld+json" set:html={jsonLd} />
 
     <!-- Runs before first paint so there is no theme flash. Storage can throw (private mode), hence the try/catch. -->
     <script is:inline>

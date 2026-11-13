@@ -3,7 +3,8 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 import Section from "../components/Section.astro";
 import AppMock from "../components/AppMock.astro";
 import AgentRoster from "../components/AgentRoster.astro";
-import { PROVIDERS, SITE } from "../lib/site";
+import { PLATFORMS, PROVIDERS, PUBLISHER, SITE } from "../lib/site";
+import { loadManifest } from "../lib/manifest";
 import { Image } from "astro:assets";
 import logo from "../../../../packages/brand/source/dolphin.png";
 
@@ -18,9 +19,65 @@ const privacy = [
   { title: "Encrypted sync", text: "Phone and desktop will sync end to end encrypted, to a database you own. Coming with the iOS app." },
   { title: "Permissions that are enforced", text: "Planning is read-only. Writes and commands only happen inside your workspace, after you approve, and are all logged." },
 ];
+const list = (items: readonly string[]) => `${items.slice(0, -1).join(", ")} or ${items.at(-1)}`;
+const desktop = PLATFORMS.filter((p) => p.id !== "ios");
+const ios = PLATFORMS.find((p) => p.id === "ios");
+
+// Every answer here is shown on the page and mirrored in the FAQPage JSON-LD below.
+const faq = [
+  {
+    q: "What is Dolphin Pod?",
+    a: "Dolphin Pod is a Discord-like desktop app where the members of your chats are AI agents. Roger moderates, Lincoln orchestrates, and specialists for coding, security, debugging, writing, docs, images, teaching and research answer in shared chats.",
+  },
+  {
+    q: "How is it different from a single AI chatbot?",
+    a: "Instead of one assistant you get a pod. Roger decides what each message needs, Lincoln briefs the right specialist, and you can @mention any agent to talk to it directly. Each agent can have its own name, color, provider, model and reasoning effort.",
+  },
+  {
+    q: "Which platforms does Dolphin Pod run on?",
+    a: `Dolphin Pod runs on ${list(desktop.map((p) => p.label)).replace(" or ", " and ")}. Requirements: ${desktop
+      .map((p) => (p.req.includes(p.label) ? p.req : `${p.label}: ${p.req}`))
+      .join("; ")}. ${ios ? `An ${ios.label} app arrives together with encrypted sync and remote control.` : ""}`.trim(),
+  },
+  {
+    q: "Which AI models can I use?",
+    a: `Reasoning models from local servers (${list(PROVIDERS.local.map((p) => (p === "OpenAI-compatible" ? "any OpenAI-compatible server" : p)))}) or cloud providers (${list(PROVIDERS.cloud)}). Pick one model for everyone or set one per agent.`,
+  },
+  {
+    q: "Where are my chats and API keys stored?",
+    a: "Chats, agents and settings live in a SQLite database on your machine. API keys go to your system keychain and are never written to the database or a config file. With Ollama or LM Studio, Dolphin Pod can run fully offline.",
+  },
+  {
+    q: "Can the agents change files on my computer?",
+    a: "Only after you approve. Planning is read-only; approving a plan lets agents write files and run commands inside the workspace folder you gave the chat, and every action is logged.",
+  },
+];
+
+const manifest = await loadManifest();
+const origin = new URL("/", Astro.site).href;
+const schema = [
+  {
+    "@type": "SoftwareApplication",
+    "@id": `${origin}#app`,
+    name: SITE.name,
+    applicationCategory: "CommunicationApplication",
+    applicationSubCategory: "AI agent group chat",
+    operatingSystem: desktop.map((p) => p.label).join(", "),
+    description: SITE.seoDescription,
+    url: origin,
+    downloadUrl: new URL("/download/", Astro.site).href,
+    softwareVersion: manifest.latest,
+    image: new URL("/og-image.png", Astro.site).href,
+    publisher: PUBLISHER,
+  },
+  {
+    "@type": "FAQPage",
+    mainEntity: faq.map((f) => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: f.a } })),
+  },
+];
 ---
 
-<BaseLayout>
+<BaseLayout schema={schema}>
   <section class="container-page grid items-center gap-12 pb-12 pt-14 md:pb-20 md:pt-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
     <div>
       <p class="chip mb-5 whitespace-nowrap" data-reveal>
@@ -28,6 +85,7 @@ const privacy = [
         Version <span data-dl-version>0.1.0</span> · by MintFlow Technologies
       </p>
       <h1 class="text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl lg:text-6xl" data-reveal data-reveal-delay="0.05">
+        <span class="eyebrow mb-3 block text-[0.85rem] tracking-[0.08em] sm:text-[1rem]">Dolphin Pod · AI agent group chat</span>{" "}
         Your pod of <span class="brand-text">AI agents</span>, in one chat.
       </h1>
       <p class="mt-5 max-w-xl text-lg text-muted" data-reveal data-reveal-delay="0.1">
@@ -103,6 +161,19 @@ const privacy = [
         ))
       }
     </ul>
+  </Section>
+
+  <Section id="faq" eyebrow="FAQ" title="Questions, answered." lead="Quick answers about the app, the models it works with and where your data lives.">
+    <dl class="grid gap-4 md:grid-cols-2" data-stagger>
+      {
+        faq.map((f) => (
+          <div class="glass rounded-lg p-6" data-stagger-item>
+            <dt class="font-semibold">{f.q}</dt>
+            <dd class="mt-2 text-sm text-muted">{f.a}</dd>
+          </div>
+        ))
+      }
+    </dl>
   </Section>
 
   <section class="container-page py-12">

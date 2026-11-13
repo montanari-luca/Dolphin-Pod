@@ -1,6 +1,6 @@
 ---
 import BaseLayout from "./BaseLayout.astro";
-import { allDocs, neighbours, routeFor, titleOf, summaryOf, type DocEntry } from "../lib/docs";
+import { allDocs, isGuide, neighbours, routeFor, titleOf, summaryOf, type DocEntry } from "../lib/docs";
 import { SITE } from "../lib/site";
 
 interface Props {
@@ -11,13 +11,42 @@ const { docs, guides } = await allDocs();
 const { prev, next } = await neighbours(entry);
 const here = routeFor(entry);
 const title = titleOf(entry);
+const guide = isGuide(entry);
+const section = guide ? { name: "Guides", path: "/guides/" } : { name: "Docs", path: "/docs/getting-started/" };
+const pageTitle = title.includes(SITE.name) ? `${title} | ${section.name}` : `${title} | ${SITE.name} ${section.name}`;
+/** Hand-written meta descriptions for docs whose first paragraph is a list or a fragment. */
+const DESCRIPTIONS: Record<string, string> = {
+  "getting-started":
+    "Get started with Dolphin Pod: connect Ollama, LM Studio or an OpenRouter key, give your agents a reasoning model, then say hi and let Roger route your message.",
+  routing:
+    "How Dolphin Pod routes a message: Roger acknowledges and decides the intent and mode, Lincoln briefs the right specialist, and @mentions go straight to an agent.",
+  profile:
+    "Set your Dolphin Pod profile: a display name agents address you by, plus cosmetic roles with names, icons and gradient colors. Everyone starts as Master.",
+};
+
+// The docs landing page is itself the first doc, so it gets a single crumb.
+const crumbs = here === section.path ? [{ name: title, path: here }] : [section, { name: title, path: here }];
+const description = DESCRIPTIONS[entry.id] ?? metaDescription(summaryOf(entry), title, guide);
+
+/** Keep descriptions in the 70-160 character range search engines show in full. */
+function metaDescription(summary: string, t: string, isGuidePage: boolean) {
+  let text = summary;
+  if (text.length < 70) text = `${text} ${isGuidePage ? "A Dolphin Pod guide" : "Dolphin Pod docs"}: ${t.toLowerCase()}.`.trim();
+  if (text.length > 160) text = `${text.slice(0, 157).replace(/\s+\S*$/, "")}...`;
+  return text;
+}
 const groups = [
   { label: "Documentation", items: docs },
   { label: "Guides", items: guides },
 ];
 ---
 
-<BaseLayout title={title} description={summaryOf(entry)} type="article">
+<BaseLayout
+  title={pageTitle}
+  description={description}
+  type="article"
+  breadcrumbs={crumbs}
+>
   <div class="container-page grid gap-10 py-10 lg:grid-cols-[15rem_minmax(0,1fr)] lg:py-14">
     <aside class="lg:sticky lg:top-24 lg:self-start">
       <nav aria-label="Documentation" class="space-y-6 text-sm">

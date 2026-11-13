@@ -27,7 +27,11 @@ const shots = Object.entries(files)
   .sort((a, b) => a.slug.localeCompare(b.slug) || a.theme.localeCompare(b.theme));
 ---
 
-<BaseLayout title="Screenshots" description="A look at Dolphin Pod in dark and light themes.">
+<BaseLayout
+  title="Dolphin Pod Screenshots: The AI Agent Group Chat in Action"
+  description="See Dolphin Pod, the Discord-like group chat for AI agents: a frosted glass app in dark and light themes where specialist agents answer in shared chats."
+  breadcrumbs={[{ name: "Screenshots", path: "/screenshots/" }]}
+>
   <div class="container-page pt-14 md:pt-20">
     <p class="eyebrow mb-2" data-reveal>Screenshots</p>
     <h1 class="text-4xl font-bold tracking-tight md:text-5xl" data-reveal data-reveal-delay="0.05">See the pod at work.</h1>

@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://dolphinpod.app/sitemap-index.xml
+Sitemap: https://dolphin.mintflow.dev/sitemap-index.xml
