@@ -8,7 +8,7 @@ export const SITE = {
   /** Home page <title> and meta description: product name plus the words people search for. */
   seoTitle: "Dolphin Pod: Discord-Like Group Chat App for AI Agents",
   seoDescription:
-    "Dolphin Pod is a Discord-like multi-agent chat app: AI agents answer in shared chats on Ollama, LM Studio or cloud models. Local-first, for Mac, Windows, Linux.",
+    "Dolphin Pod is a free, Discord-like group chat app for AI agents on Ollama, LM Studio or cloud models. Local-first, for Mac, Windows, Linux and iPhone.",
   repo: "https://github.com/montanari-luca/Dolphin-Pod",
   docsEditBase: "https://github.com/montanari-luca/Dolphin-Pod/edit/master/docs/",
 };
@@ -44,7 +44,7 @@ export const PLATFORMS = [
     req: "Windows 10 or newer, 64-bit (uses the Microsoft WebView2 runtime)",
   },
   { id: "linux", label: "Linux", req: "64-bit distribution with WebKitGTK 4.1 and a Secret Service keyring" },
-  { id: "ios", label: "iOS", req: "iPhone (arrives together with encrypted sync and remote control)" },
+  { id: "ios", label: "iOS", req: "iPhone, with encrypted sync and remote control of your desktop" },
 ] as const;
 export type PlatformId = (typeof PLATFORMS)[number]["id"];
 

@@ -16,7 +16,7 @@ const steps = [
 const privacy = [
   { title: "Local-first", text: "Chats, agents and settings live in a SQLite database on your machine. Run fully offline with Ollama or LM Studio." },
   { title: "Keys in the keychain", text: "API keys go to the system keychain and are never written to the database or to a config file." },
-  { title: "Encrypted sync", text: "Phone and desktop will sync end to end encrypted, to a database you own. Coming with the iOS app." },
+  { title: "Encrypted sync", text: "Phone and desktop sync end to end encrypted, to a database you own. Off by default." },
   { title: "Permissions that are enforced", text: "Planning is read-only. Writes and commands only happen inside your workspace, after you approve, and are all logged." },
 ];
 const list = (items: readonly string[]) => `${items.slice(0, -1).join(", ")} or ${items.at(-1)}`;
@@ -37,7 +37,11 @@ const faq = [
     q: "Which platforms does Dolphin Pod run on?",
     a: `Dolphin Pod runs on ${list(desktop.map((p) => p.label)).replace(" or ", " and ")}. Requirements: ${desktop
       .map((p) => (p.req.includes(p.label) ? p.req : `${p.label}: ${p.req}`))
-      .join("; ")}. ${ios ? `An ${ios.label} app arrives together with encrypted sync and remote control.` : ""}`.trim(),
+      .join("; ")}. ${ios ? `The ${ios.label} app joins the same pod through encrypted sync and can send requests to your desktop with remote control.` : ""}`.trim(),
+  },
+  {
+    q: "Is Dolphin Pod free?",
+    a: "Yes. Dolphin Pod is free to download and use on desktop and iPhone. You bring your own models: local ones through Ollama or LM Studio cost nothing, and cloud providers bill you directly for what you use.",
   },
   {
     q: "Which AI models can I use?",
@@ -62,7 +66,8 @@ const schema = [
     name: SITE.name,
     applicationCategory: "CommunicationApplication",
     applicationSubCategory: "AI agent group chat",
-    operatingSystem: desktop.map((p) => p.label).join(", "),
+    operatingSystem: PLATFORMS.map((p) => p.label).join(", "),
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
     description: SITE.seoDescription,
     url: origin,
     downloadUrl: new URL("/download/", Astro.site).href,
@@ -96,7 +101,7 @@ const schema = [
         <a class="btn btn-primary" href="/download/" data-dl-hero><span data-dl-label>Download</span></a>
         <a class="btn" href="/docs/getting-started/">Read the docs</a>
       </div>
-      <p class="mt-4 text-sm text-muted" data-reveal data-reveal-delay="0.2">macOS, Windows and Linux. iPhone app on the way.</p>
+      <p class="mt-4 text-sm text-muted" data-reveal data-reveal-delay="0.2">macOS, Windows, Linux and iPhone.</p>
     </div>
     <div class="relative" data-reveal data-reveal-delay="0.1">
       <div class="pointer-events-none absolute -right-4 -top-6 z-10 hidden sm:block" data-float="9" aria-hidden="true">
